@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>beside</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;1,400;1,500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --dark: #2D2420; --dark2: #3D2E28; --dark3: #5A3E36;
+    --linen: #F5F0EC; --stone: #D9CFC8; --dusk: #8A7A72;
+    --terra: #C4907A; --text: #2D2420;
+    --serif: 'Lora', Georgia, serif; --sans: 'DM Sans', system-ui, sans-serif;
+    --r-md: 10px; --r-lg: 16px; --r-pill: 99px;
+  }
+  html, body { height: 100%; background: #1a1210; font-family: var(--sans); }
+  #root { height: 100%; display: flex; justify-content: center; align-items: flex-start; }
+  .app-shell { width: 100%; max-width: 430px; min-height: 100vh; background: var(--linen); display: flex; flex-direction: column; overflow: hidden; }
+  .screen { flex: 1; display: flex; flex-direction: column; overflow-y: auto; }
+  .dark-bg { background: var(--dark); }
+  .linen-bg { background: var(--linen); }
+  .t-hero { font-family: var(--serif); font-size: 26px; line-height: 1.35; font-weight: 400; }
+  .t-title { font-size: 15px; font-weight: 500; }
+  .t-body { font-size: 13px; line-height: 1.65; font-weight: 300; }
+  .t-label { font-size: 10px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; }
+  .t-muted { color: var(--dusk); }
+  .t-light { color: var(--linen); }
+  .status-bar { display: flex; justify-content: space-between; align-items: center; padding: 14px 22px 0; font-size: 12px; font-weight: 500; flex-shrink: 0; }
+  .status-dark { background: var(--dark); color: var(--dusk); }
+  .status-light { background: var(--linen); color: var(--dusk); }
+  .btn { width: 100%; padding: 14px; border-radius: 12px; border: none; font-family: var(--sans); font-size: 14px; font-weight: 500; cursor: pointer; transition: opacity 0.15s; text-align: center; display: block; }
+  .btn:hover:not(:disabled) { opacity: 0.88; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary-dark { background: var(--terra); color: var(--dark); }
+  .btn-primary-light { background: var(--dark); color: var(--linen); }
+  .btn-ghost-dark { background: transparent; border: 0.5px solid var(--dark3); color: var(--dusk); }
+  .btn-ghost-light { background: transparent; border: 0.5px solid var(--stone); color: var(--dusk); }
+  .btn-apple { background: #000; color: #fff; display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .btn-sm { padding: 9px 18px; font-size: 13px; width: auto; }
+  .divider-row { display: flex; align-items: center; gap: 12px; }
+  .divider-line { flex: 1; height: 0.5px; }
+  .divider-dark { background: var(--dark3); }
+  .divider-light { background: var(--stone); }
+  .divider-text { font-size: 11px; letter-spacing: 0.06em; color: var(--dark3); }
+  .input { width: 100%; padding: 12px 14px; border-radius: var(--r-md); border: 0.5px solid; font-family: var(--sans); font-size: 13px; outline: none; transition: border-color 0.15s; }
+  .input-dark { background: var(--dark2); border-color: var(--dark3); color: var(--linen); }
+  .input-dark::placeholder { color: var(--dark3); }
+  .input-dark:focus { border-color: var(--dusk); }
+  .input-light { background: #fff; border-color: var(--stone); color: var(--text); }
+  .input-light::placeholder { color: var(--stone); }
+  .input-light:focus { border-color: var(--dark); }
+  .card { background: #fff; border-radius: var(--r-lg); border: 0.5px solid var(--stone); overflow: hidden; }
+  .card-dark { background: var(--dark); border-radius: var(--r-lg); border: 0.5px solid var(--dark2); overflow: hidden; }
+  .card-pad { padding: 14px 16px; }
+  .dots { display: flex; gap: 5px; justify-content: center; padding: 10px 0; }
+  .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--dark3); transition: all 0.2s; }
+  .dot.active { width: 16px; border-radius: 3px; background: var(--terra); }
+  .option { padding: 12px 14px; border-radius: 10px; border: 0.5px solid; font-size: 13px; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 10px; }
+  .option-dark { border-color: var(--dark3); color: #C4B4AA; }
+  .option-dark:hover, .option-dark.sel { background: var(--dark2); border-color: var(--terra); color: var(--linen); }
+  .option-light { border-color: var(--stone); color: var(--text); }
+  .option-light:hover, .option-light.sel { background: #fff; border-color: var(--dark); }
+  .opt-circle { width: 18px; height: 18px; border-radius: 50%; border: 1px solid; flex-shrink: 0; transition: all 0.15s; }
+  .opt-circle-dark { border-color: var(--dark3); }
+  .opt-circle-dark.sel { background: var(--terra); border-color: var(--terra); }
+  .opt-circle-light { border-color: var(--stone); }
+  .opt-circle-light.sel { background: var(--dark); border-color: var(--dark); }
+  .bottom-nav { background: #fff; border-top: 0.5px solid var(--stone); display: flex; padding: 8px 0 20px; flex-shrink: 0; }
+  .nav-tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: pointer; padding: 4px 0; transition: opacity 0.15s; }
+  .nav-tab:hover { opacity: 0.7; }
+  .nav-tab-label { font-size: 9px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; }
+  .nav-tab.active .nav-tab-label { color: var(--dark); }
+  .nav-tab:not(.active) .nav-tab-label { color: var(--stone); }
+  .nav-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--dark); }
+  .bubble-row { display: flex; align-items: flex-end; gap: 8px; }
+  .bubble-c { background: var(--dark2); border-radius: 14px 14px 14px 3px; padding: 11px 14px; max-width: 78%; font-family: var(--serif); font-size: 13px; line-height: 1.7; color: #C4B4AA; font-style: italic; }
+  .bubble-u { background: var(--linen); border-radius: 14px 14px 3px 14px; padding: 11px 14px; max-width: 78%; font-size: 13px; line-height: 1.65; color: var(--text); margin-left: auto; }
+  .av-dot { width: 22px; height: 22px; border-radius: 50%; background: var(--dark2); border: 0.5px solid var(--terra); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .av-inner { width: 7px; height: 7px; border-radius: 50%; background: var(--terra); }
+  .typing-wrap { display: flex; gap: 4px; padding: 14px; background: var(--dark2); border-radius: 14px 14px 14px 3px; align-items: center; }
+  .td { width: 5px; height: 5px; border-radius: 50%; background: var(--dusk); animation: pulse 1.2s ease-in-out infinite; }
+  .td:nth-child(2){animation-delay:0.2s} .td:nth-child(3){animation-delay:0.4s}
+  @keyframes pulse{0%,60%,100%{opacity:0.3;transform:scale(1)}30%{opacity:1;transform:scale(1.25)}}
+  .mood-row { display: flex; gap: 6px; }
+  .mood-btn { flex: 1; padding: 9px 4px; border-radius: 8px; border: 0.5px solid var(--stone); background: transparent; font-size: 12px; color: var(--dusk); cursor: pointer; font-family: var(--sans); text-align: center; transition: all 0.15s; }
+  .mood-btn:hover, .mood-btn.active { background: var(--dark); border-color: var(--dark); color: var(--linen); }
+  .mood-e { display: block; font-size: 15px; margin-bottom: 2px; }
+  .j-textarea { width: 100%; min-height: 160px; padding: 14px; border-radius: var(--r-md); border: 0.5px solid var(--stone); font-family: var(--serif); font-size: 14px; line-height: 1.7; color: var(--text); resize: none; outline: none; font-style: italic; }
+  .j-textarea:focus { border-color: var(--dark); }
+  .prog-bar { height: 4px; border-radius: 2px; background: #ede8e3; overflow: hidden; }
+  .prog-fill { height: 100%; border-radius: 2px; background: var(--terra); }
+  .pill { display: inline-flex; align-items: center; gap: 6px; background: var(--dark2); border-radius: var(--r-pill); padding: 4px 12px 4px 8px; }
+  .pill-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--terra); }
+  .priv-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; background: var(--dark2); border-radius: 10px; }
+  .priv-icon { width: 14px; height: 14px; border-radius: 3px; background: var(--terra); flex-shrink: 0; margin-top: 1px; }
+  .err { background: rgba(200,60,60,0.15); border: 0.5px solid rgba(200,60,60,0.4); border-radius: var(--r-md); padding: 10px 12px; font-size: 12px; color: #ff9090; line-height: 1.5; }
+  .ok { background: rgba(76,175,80,0.12); border: 0.5px solid rgba(76,175,80,0.4); border-radius: var(--r-md); padding: 10px 12px; font-size: 12px; color: #81c784; line-height: 1.5; }
+  .sql-block { background: var(--dark2); border-radius: var(--r-md); padding: 12px 14px; font-family: monospace; font-size: 10px; color: #C4B4AA; line-height: 1.6; border: 0.5px solid var(--dark3); white-space: pre-wrap; word-break: break-all; }
+  .field-label { font-size: 11px; font-weight: 500; color: var(--dusk); margin-bottom: 5px; letter-spacing: 0.06em; text-transform: uppercase; }
+  .tog-row { display: flex; border: 0.5px solid var(--dark3); border-radius: 8px; overflow: hidden; }
+  .tog-btn { flex: 1; padding: 9px; font-size: 12px; font-weight: 500; cursor: pointer; text-align: center; font-family: var(--sans); border: none; transition: all 0.15s; }
+  .tog-on { background: var(--terra); color: var(--dark); }
+  .tog-off { background: transparent; color: var(--dusk); }
+  .lnk { background: none; border: none; cursor: pointer; font-family: var(--sans); font-size: 11px; color: var(--dark3); text-decoration: underline; padding: 0; }
+  .scroll-content { flex: 1; overflow-y: auto; }
+  .fade-in { animation: fi 0.3s ease forwards; }
+  @keyframes fi{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="module">
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const LS = {
+  get: k => { try { return localStorage.getItem('bsd_'+k)||''; } catch(e){ return ''; } },
+  set: (k,v) => { try { localStorage.setItem('bsd_'+k,v); } catch(e){} },
+};
+
+let sb = null;
+let S = {
+  screen:'setup', sbUrl:LS.get('url'), sbKey:LS.get('key'), anKey:LS.get('akey'),
+  authMode:'signin', authEmail:'', authPass:'', authName:'',
+  userId:null, userName:'', userStage:'', userPriorities:[],
+  obStep:0,
+  convs:[], isTyping:false,
+  todayMood:'', journalEntries:[], jPrompt:'', jText:'', jLoading:false,
+  dayCount:1, streak:1,
+  err:'', loading:false, verifyPending:false,
+};
+
+// ── SQL schema ─────────────────────────────────────────────────
+const SQL = `-- Run in Supabase SQL editor (Settings → SQL Editor)
+
+create table if not exists beside_users (
+  id uuid primary key references auth.users(id) on delete cascade,
+  name text,
+  divorce_stage text,
+  priorities text[],
+  streak int default 1,
+  day_count int default 1,
+  created_at timestamptz default now()
+);
+create table if not exists beside_conversations (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references beside_users(id) on delete cascade,
+  role text not null, content text not null,
+  created_at timestamptz default now()
+);
+create table if not exists beside_moods (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references beside_users(id) on delete cascade,
+  mood text not null, created_at timestamptz default now()
+);
+create table if not exists beside_journal (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references beside_users(id) on delete cascade,
+  prompt text, content text not null,
+  created_at timestamptz default now()
+);
+
+-- RLS: each user sees only their own data (POPIA-aligned)
+alter table beside_users enable row level security;
+alter table beside_conversations enable row level security;
+alter table beside_moods enable row level security;
+alter table beside_journal enable row level security;
+
+drop policy if exists "own_u" on beside_users;
+drop policy if exists "own_c" on beside_conversations;
+drop policy if exists "own_m" on beside_moods;
+drop policy if exists "own_j" on beside_journal;
+
+create policy "own_u" on beside_users for all using (id = auth.uid());
+create policy "own_c" on beside_conversations for all using (user_id = auth.uid());
+create policy "own_m" on beside_moods for all using (user_id = auth.uid());
+create policy "own_j" on beside_journal for all using (user_id = auth.uid());
+
+-- Apple Sign-In: enable at
+-- Dashboard → Authentication → Providers → Apple`;
+
+// ── DB helpers ─────────────────────────────────────────────────
+async function initSB(url, key) {
+  sb = createClient(url, key);
+  const { error } = await sb.from('beside_users').select('id').limit(1);
+  if (error && !error.message.includes('JWT') && !error.message.includes('policy'))
+    throw new Error('Cannot connect. Check your URL and anon key, and confirm the schema is set up.');
+}
+
+async function getOrCreateProfile(authUser, name) {
+  const { data: ex } = await sb.from('beside_users').select('*').eq('id', authUser.id).single();
+  if (ex) return ex;
+  const n = name || authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'Friend';
+  const { data, error } = await sb.from('beside_users')
+    .insert({ id: authUser.id, name: n, streak: 1, day_count: 1 }).select().single();
+  if (error) throw error;
+  return data;
+}
+
+async function updateProfile(fields) {
+  await sb.from('beside_users').update(fields).eq('id', S.userId);
+}
+
+async function loadConvs() {
+  const { data } = await sb.from('beside_conversations')
+    .select('*').eq('user_id', S.userId).order('created_at',{ascending:true}).limit(40);
+  return data || [];
+}
+
+async function saveMsg(role, content) {
+  await sb.from('beside_conversations').insert({ user_id: S.userId, role, content });
+}
+
+async function saveMood(mood) {
+  await sb.from('beside_moods').insert({ user_id: S.userId, mood });
+}
+
+async function loadTodayMood() {
+  const d = new Date(); d.setHours(0,0,0,0);
+  const { data } = await sb.from('beside_moods').select('mood').eq('user_id',S.userId)
+    .gte('created_at',d.toISOString()).order('created_at',{ascending:false}).limit(1);
+  return data?.[0]?.mood||'';
+}
+
+async function saveJournal(prompt, content) {
+  const { data, error } = await sb.from('beside_journal')
+    .insert({ user_id: S.userId, prompt, content }).select().single();
+  if (error) throw error;
+  return data;
+}
+
+async function loadJournals() {
+  const { data } = await sb.from('beside_journal').select('*')
+    .eq('user_id',S.userId).order('created_at',{ascending:false}).limit(20);
+  return data || [];
+}
+
+async function signOut() {
+  await sb.auth.signOut();
+  Object.assign(S, { userId:null, userName:'', userStage:'', userPriorities:[], convs:[], journalEntries:[], jPrompt:'', jText:'', todayMood:'', screen:'auth', authEmail:'', authPass:'', authName:'' });
+  render();
+}
+
+// ── Anthropic ──────────────────────────────────────────────────
+async function ai(messages, system) {
+  // Calls Supabase Edge Function proxy to avoid CORS restrictions
+  const proxyUrl = S.sbUrl + '/functions/v1/companion';
+  const r = await fetch(proxyUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + S.sbKey },
+    body: JSON.stringify({ messages, system, apiKey: S.anKey })
+  });
+  if (!r.ok) {
+    let msg = 'Proxy error';
+    try { const e = await r.json(); msg = e.error?.message || JSON.stringify(e); } catch(_) {}
+    throw new Error(r.status + ': ' + msg);
+  }
+  const data = await r.json();
+  if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+  return data.content[0].text;
+}
+
+const SYS_COMPANION = () =>
+  `You are the Beside companion — warm, unhurried, supporting ${S.userName} through life after divorce.
+Situation: ${S.userStage}. Priorities: ${S.userPriorities.join(', ')}.
+Listen, reflect, ask ONE precise question per response. Acknowledge pain without amplifying or minimising.
+Never give clinical advice, hollow reassurances, or ask more than one question. Keep responses to 2-4 sentences.`;
+
+const SYS_JOURNAL = () =>
+  `Write one journal prompt for ${S.userName} (${S.userStage} after divorce). One sentence, second person, emotionally honest, self-discovery focused. Start with What/When/Describe/Write about. Return only the prompt.`;
+
+// ── Render ─────────────────────────────────────────────────────
+function R() {
+  const root = document.getElementById('root');
+  root.innerHTML = '';
+  const shell = document.createElement('div');
+  shell.className = 'app-shell';
+  const screens = { setup:rSetup, auth:rAuth, onboarding:rOnboarding, home:rHome, companion:rCompanion, journal:rJournal };
+  shell.appendChild((screens[S.screen]||rHome)());
+  if (['home','companion','journal'].includes(S.screen)) shell.appendChild(rNav());
+  root.appendChild(shell);
+}
+const render = R;
+
+// ── SETUP ──────────────────────────────────────────────────────
+function rSetup() {
+  const w = el('div','screen dark-bg');
+  w.innerHTML = `
+    <div class="status-bar status-dark"><span style="font-family:var(--serif);letter-spacing:0.08em">beside</span><span></span></div>
+    <div style="padding:24px;display:flex;flex-direction:column;gap:14px;flex:1">
+      <div style="font-family:var(--serif);font-size:28px;color:var(--linen);letter-spacing:0.08em;text-align:center;margin-bottom:4px">beside</div>
+      <div class="t-label t-muted" style="text-align:center;margin-top:-8px;margin-bottom:8px">connect your data layer</div>
+      <div><div class="field-label">Supabase project URL</div>
+        <input id="i-url" class="input input-dark" placeholder="https://xxxx.supabase.co" value="${S.sbUrl}"></div>
+      <div><div class="field-label">Supabase anon key</div>
+        <input id="i-key" class="input input-dark" placeholder="eyJhbGciOiJIUzI1NiIs..." value="${S.sbKey}"></div>
+      <div><div class="field-label">Anthropic API key</div>
+        <input id="i-akey" class="input input-dark" placeholder="sk-ant-..." type="password" value="${S.anKey}"></div>
+      ${S.err?`<div class="err">${S.err}</div>`:''}
+      <button id="conn-btn" class="btn btn-primary-dark" ${S.loading?'disabled':''}>${S.loading?'Connecting…':'Connect & continue'}</button>
+      <div style="border-top:0.5px solid var(--dark3);padding-top:14px">
+        <div class="field-label" style="color:var(--dusk);margin-bottom:8px">Supabase schema — run this first</div>
+        <div class="sql-block">${SQL}</div>
+        <div style="margin-top:10px;font-size:11px;color:var(--dark3);line-height:1.6">
+All data is stored in your own Supabase project. RLS ensures each user sees only their own data.<br><br>
+<span style="color:var(--terra)">Required: create a Supabase Edge Function named <strong style="color:var(--terra)">companion</strong> — see the guide below.</span>
+</div>
+<div style="margin-top:10px;background:var(--dark2);border-radius:var(--r-md);padding:12px 14px;font-size:11px;color:#C4B4AA;line-height:1.7;border:0.5px solid var(--dark3)">
+<strong style="color:var(--terra)">Edge Function setup (required for AI)</strong><br>
+1. Supabase Dashboard → Edge Functions → New Function<br>
+2. Name it exactly: <strong>companion</strong><br>
+3. Paste the proxy code from beside-edge-function.ts<br>
+4. Deploy — the URL auto-resolves from your project URL
+</div>
+      </div>
+    </div>`;
+  on(w,'#conn-btn','click',async()=>{
+    S.sbUrl=val('i-url'); S.sbKey=val('i-key'); S.anKey=val('i-akey');
+    if(!S.sbUrl||!S.sbKey||!S.anKey){S.err='Please fill in all three fields.';R();return;}
+    S.loading=true;S.err='';R();
+    try{
+      await initSB(S.sbUrl,S.sbKey);
+      LS.set('url',S.sbUrl);LS.set('key',S.sbKey);LS.set('akey',S.anKey);
+      const {data:{session}}=await sb.auth.getSession();
+      if(session) await handleSession(session); else S.screen='auth';
+    }catch(e){S.err=e.message;}
+    S.loading=false;R();
+  });
+  ['i-url','i-key','i-akey'].forEach((id,i)=>w.querySelector('#'+id)?.addEventListener('input',e=>{['sbUrl','sbKey','anKey'][i];S[['sbUrl','sbKey','anKey'][i]]=e.target.value;}));
+  return w;
+}
+
+// ── AUTH ───────────────────────────────────────────────────────
+function rAuth() {
+  const isUp = S.authMode==='signup';
+  const w = el('div','screen dark-bg');
+  w.innerHTML = `
+    <div class="status-bar status-dark"><span>9:41</span><span>●●●</span></div>
+    <div style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:28px 24px">
+      <div style="font-family:var(--serif);font-size:38px;color:var(--linen);letter-spacing:0.1em;text-align:center;margin-bottom:4px">beside</div>
+      <div class="t-label t-muted" style="text-align:center;margin-bottom:28px">your private space</div>
+      ${S.verifyPending?`
+        <div class="ok" style="margin-bottom:16px;text-align:center;line-height:1.6">
+          Check your inbox — we've sent you a confirmation link.<br>Click it, then return here to sign in.
+        </div>
+        <button id="back-si" class="btn btn-ghost-dark">Back to sign in</button>
+      `:`
+        <div style="display:flex;flex-direction:column;gap:11px">
+          <div class="tog-row">
+            <button class="tog-btn ${!isUp?'tog-on':'tog-off'}" id="tog-si">Sign in</button>
+            <button class="tog-btn ${isUp?'tog-on':'tog-off'}" id="tog-su">Create account</button>
+          </div>
+          ${isUp?`<div><div class="field-label">Your first name</div>
+            <input id="a-name" class="input input-dark" placeholder="What should we call you?" value="${S.authName}"></div>`:''}
+          <div><div class="field-label">Email</div>
+            <input id="a-email" class="input input-dark" placeholder="your@email.com" type="email" value="${S.authEmail}"></div>
+          <div><div class="field-label">Password</div>
+            <input id="a-pass" class="input input-dark" placeholder="${isUp?'Choose a password (8+ chars)':'Your password'}" type="password"></div>
+          ${S.err?`<div class="err">${S.err}</div>`:''}
+          <button id="email-btn" class="btn btn-primary-dark" ${S.loading?'disabled':''}>${S.loading?'One moment…':isUp?'Create my account':'Sign in'}</button>
+          <div class="divider-row"><div class="divider-line divider-dark"></div><div class="divider-text">or</div><div class="divider-line divider-dark"></div></div>
+          <button id="apple-btn" class="btn btn-apple" ${S.loading?'disabled':''}>
+            <svg width="17" height="17" viewBox="0 0 814 1000" fill="white"><path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105-36.8-155.5-127.4C46 672.4 0 562 0 455.6c0-220.2 142.9-336.6 283.5-336.6 74.4 0 136.3 48.9 182.8 48.9 44.5 0 114.6-51.7 198.2-51.7 32.1 0 137.1 2.9 210.4 109.8zm-252.3-166.8c35.5-41.9 59.8-99.8 59.8-157.7 0-8.1-.6-16.3-2-23.7-57.1 2.2-124.4 38.1-166.8 82.4-31.7 35.5-60.1 93.5-60.1 152.1 0 8.7 1.5 17.4 2.1 20.1 3.7.6 9.6 1.3 15.5 1.3 51.5 0 114.9-34.2 151.5-74.5z"/></svg>
+            Continue with Apple
+          </button>
+          <div style="font-size:11px;color:var(--dark3);text-align:center;line-height:1.6">Apple Sign-In uses a private relay email — Beside never sees your real Apple ID.</div>
+        </div>
+      `}
+    </div>
+    <div style="padding:0 24px 20px;text-align:center">
+      <button id="chg-conn" class="lnk">Change connection settings</button>
+    </div>`;
+
+  on(w,'#chg-conn','click',()=>{S.screen='setup';S.err='';R();});
+  if(S.verifyPending){on(w,'#back-si','click',()=>{S.verifyPending=false;S.authMode='signin';S.err='';R();});return w;}
+  on(w,'#tog-si','click',()=>{S.authMode='signin';S.err='';R();});
+  on(w,'#tog-su','click',()=>{S.authMode='signup';S.err='';R();});
+  w.querySelector('#a-email')?.addEventListener('input',e=>S.authEmail=e.target.value);
+  w.querySelector('#a-pass')?.addEventListener('input',e=>S.authPass=e.target.value);
+  w.querySelector('#a-name')?.addEventListener('input',e=>S.authName=e.target.value);
+  on(w,'#email-btn','click',handleEmailAuth);
+  on(w,'#apple-btn','click',handleAppleAuth);
+  return w;
+}
+
+async function handleEmailAuth() {
+  const email=(document.getElementById('a-email')?.value||S.authEmail).trim();
+  const pass=document.getElementById('a-pass')?.value||S.authPass;
+  const name=(document.getElementById('a-name')?.value||S.authName).trim();
+  if(!email||!pass){S.err='Please enter your email and password.';R();return;}
+  S.loading=true;S.err='';R();
+  try{
+    if(S.authMode==='signup'){
+      if(pass.length<8)throw new Error('Password must be at least 8 characters.');
+      const {data,error}=await sb.auth.signUp({email,password:pass,options:{data:{full_name:name||email.split('@')[0]}}});
+      if(error)throw error;
+      if(!data.session){S.verifyPending=true;S.loading=false;R();return;}
+      await handleSession(data.session,name);
+    }else{
+      const {data,error}=await sb.auth.signInWithPassword({email,password:pass});
+      if(error)throw error;
+      await handleSession(data.session);
+    }
+  }catch(e){S.err=e.message.replace('AuthApiError: ','');}
+  S.loading=false;R();
+}
+
+async function handleAppleAuth() {
+  if(!sb){S.err='Not connected.';R();return;}
+  S.loading=true;S.err='';R();
+  try{
+    const {error}=await sb.auth.signInWithOAuth({
+      provider:'apple',
+      options:{redirectTo:window.location.href.split('#')[0].split('?')[0],scopes:'name email'}
+    });
+    if(error)throw error;
+    // Redirect happens — show nothing, browser leaves page
+  }catch(e){
+    S.err='Apple Sign-In failed: '+e.message+'. Enable Apple in Supabase Dashboard → Authentication → Providers.';
+    S.loading=false;R();
+  }
+}
+
+async function handleSession(session, overrideName) {
+  const u = session.user;
+  try{
+    const profile = await getOrCreateProfile(u, overrideName||S.authName||u.user_metadata?.full_name);
+    S.userId=profile.id; S.userName=profile.name; S.userStage=profile.divorce_stage||'';
+    S.userPriorities=profile.priorities||[]; S.dayCount=profile.day_count||1; S.streak=profile.streak||1;
+    if(!profile.divorce_stage){ S.screen='onboarding'; S.obStep=1; }
+    else { await loadHomeData(); S.screen='home'; }
+  }catch(e){ S.err='Could not load profile: '+e.message; S.screen='auth'; }
+}
+
+// ── ONBOARDING ─────────────────────────────────────────────────
+const STAGES=['Just separated or divorced','A few months in','Over a year on','Still in proceedings'];
+const PRIS=['Having somewhere to process how I feel','Understanding how to help my children','Connecting with people who get it','Rebuilding who I am'];
+
+function rOnboarding() {
+  const w = el('div','screen '+(S.obStep<3?'dark-bg':'linen-bg'));
+  const dots = S.obStep>=1&&S.obStep<=3 ? `<div class="dots">${[1,2,3].map(i=>`<div class="dot ${S.obStep===i?'active':''}"></div>`).join('')}</div>` : '';
+
+  if(S.obStep===1){
+    w.innerHTML=`<div class="status-bar status-dark"><span>9:41</span><span>●●●</span></div>${dots}
+      <div style="flex:1;padding:16px 24px 0;display:flex;flex-direction:column">
+        <div class="t-body t-muted" style="margin-bottom:6px">Welcome, ${S.userName}.</div>
+        <div class="t-hero t-light" style="margin-bottom:18px">Where are you right now?</div>
+        <div style="display:flex;flex-direction:column;gap:8px;flex:1">
+          ${STAGES.map(s=>`<div class="option option-dark ${S.userStage===s?'sel':''}" data-v="${s}"><div class="opt-circle opt-circle-dark ${S.userStage===s?'sel':''}"></div>${s}</div>`).join('')}
+        </div>
+        <div style="padding:10px 0 4px;text-align:center;color:var(--dark3);font-size:12px">No right answer. Beside meets you where you are.</div>
+      </div>
+      <div style="padding:8px 24px 32px"><button id="nx" class="btn btn-primary-dark">Continue</button></div>`;
+    opts(w,'[data-v]','sel','opt-circle-dark','sel',v=>S.userStage=v,false);
+    on(w,'#nx','click',()=>{if(S.userStage){S.obStep=2;R();}});
+  }
+  else if(S.obStep===2){
+    w.innerHTML=`<div class="status-bar status-dark"><span>9:41</span><span>●●●</span></div>${dots}
+      <div style="flex:1;padding:16px 24px 0;display:flex;flex-direction:column">
+        <div class="t-body t-muted" style="margin-bottom:6px">One more thing.</div>
+        <div class="t-hero t-light" style="margin-bottom:8px">What matters most?</div>
+        <div class="t-body t-muted" style="margin-bottom:14px">Select everything that feels true.</div>
+        <div style="display:flex;flex-direction:column;gap:8px;flex:1">
+          ${PRIS.map(p=>`<div class="option option-dark ${S.userPriorities.includes(p)?'sel':''}" data-v="${p}"><div class="opt-circle opt-circle-dark ${S.userPriorities.includes(p)?'sel':''}"></div>${p}</div>`).join('')}
+        </div>
+      </div>
+      <div style="padding:8px 24px 32px"><button id="nx" class="btn btn-primary-dark">Continue</button></div>`;
+    opts(w,'[data-v]','sel','opt-circle-dark','sel',v=>{
+      if(S.userPriorities.includes(v)) S.userPriorities=S.userPriorities.filter(x=>x!==v); else S.userPriorities.push(v);
+    },true);
+    on(w,'#nx','click',()=>{if(S.userPriorities.length){S.obStep=3;R();}});
+  }
+  else if(S.obStep===3){
+    w.innerHTML=`<div class="status-bar status-dark"><span>9:41</span><span>●●●</span></div>${dots}
+      <div style="flex:1;padding:16px 24px 0;display:flex;flex-direction:column;gap:10px">
+        <div class="t-hero t-light" style="margin-bottom:4px">Before we go further —</div>
+        <div class="t-body t-muted">Everything you share here is private. Here's what that means.</div>
+        <div class="priv-row"><div class="priv-icon"></div><div class="t-body t-muted">Your conversations are never shared with advertisers, third parties, or your ex.</div></div>
+        <div class="priv-row"><div class="priv-icon"></div><div class="t-body t-muted">Delete everything at any time, permanently and immediately.</div></div>
+        <div class="priv-row"><div class="priv-icon"></div><div class="t-body t-muted">Your data lives in your own Supabase instance. Row Level Security means only you can access your rows.</div></div>
+        <div class="priv-row"><div class="priv-icon"></div><div class="t-body t-muted">Marital status and emotional health data treated as sensitive personal information under POPIA.</div></div>
+        <div class="priv-row"><div class="priv-icon"></div><div class="t-body t-muted">Apple Sign-In users: your real email is never revealed to Beside — Apple's relay protects it.</div></div>
+      </div>
+      <div style="padding:16px 24px 32px">
+        ${S.err?`<div class="err" style="margin-bottom:10px">${S.err}</div>`:''}
+        <button id="start-btn" class="btn btn-primary-dark" ${S.loading?'disabled':''}>${S.loading?'Setting up…':'I understand — enter Beside'}</button>
+      </div>`;
+    on(w,'#start-btn','click',async()=>{
+      S.loading=true;S.err='';R();
+      try{
+        await updateProfile({divorce_stage:S.userStage,priorities:S.userPriorities});
+        await loadHomeData(); S.screen='home';
+      }catch(e){S.err=e.message;}
+      S.loading=false;R();
+    });
+  }
+  return w;
+}
+
+// ── HOME ───────────────────────────────────────────────────────
+async function loadHomeData() {
+  if(!S.userId)return;
+  S.todayMood=await loadTodayMood();
+  S.journalEntries=await loadJournals();
+}
+
+function rHome() {
+  const w = el('div','screen linen-bg');
+  const d=S.dayCount||1, jc=S.journalEntries.length, pct=Math.min(Math.round(d/90*100),100);
+  const hr=new Date().getHours(), tod=hr<12?'morning':hr<17?'afternoon':'evening';
+  w.innerHTML=`
+    <div class="status-bar status-dark"><span style="color:var(--dusk);font-size:11px">9:41</span><span style="color:var(--dusk);font-size:11px">●●●</span></div>
+    <div style="background:var(--dark);padding:10px 22px 20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div style="font-family:var(--serif);font-size:18px;color:var(--linen);letter-spacing:0.08em">beside</div>
+        <div id="av" style="width:32px;height:32px;border-radius:50%;background:var(--dark2);border:0.5px solid var(--terra);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;color:var(--terra);cursor:pointer">${S.userName.charAt(0).toUpperCase()}</div>
+      </div>
+      <div class="pill" style="margin-bottom:12px"><div class="pill-dot"></div><div class="t-label" style="color:var(--dusk);font-size:9px">DAY ${d} · ${new Date().toLocaleDateString('en-ZA',{weekday:'long'}).toUpperCase()}</div></div>
+      <div class="t-hero t-light" style="margin-bottom:5px">Good ${tod},<br>${S.userName}.</div>
+      <div class="t-body t-muted">${d>1?`You've shown up ${d} days in a row.<br>That matters more than you know.`:`Welcome. This space is entirely yours.`}</div>
+    </div>
+    <div class="scroll-content" style="padding:14px 14px 0;display:flex;flex-direction:column;gap:10px">
+      <div class="card" id="cc" style="cursor:pointer"><div class="card-pad">
+        <div class="t-label t-muted" style="margin-bottom:8px">Your companion</div>
+        <div style="font-family:var(--serif);font-size:14px;color:var(--text);line-height:1.7;font-style:italic;margin-bottom:12px">"${cpPrompt()}"</div>
+        <div style="background:var(--linen);border:0.5px solid var(--stone);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--stone);font-style:italic">Reply to your companion…</div>
+      </div></div>
+      <div class="card"><div class="card-pad">
+        <div class="t-label t-muted" style="margin-bottom:10px">How are you feeling right now?</div>
+        <div class="mood-row">
+          ${[['😔','Low'],['😐','Okay'],['🌱','Better'],['☀️','Good']].map(([e,l])=>`<button class="mood-btn ${S.todayMood===l?'active':''}" data-m="${l}"><span class="mood-e">${e}</span>${l}</button>`).join('')}
+        </div>
+      </div></div>
+      <div class="card"><div class="card-pad">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div class="t-title">90-day recovery track</div>
+          <div class="t-label t-muted">Day ${d} of 90</div>
+        </div>
+        <div class="prog-bar" style="margin-bottom:10px"><div class="prog-fill" style="width:${pct}%"></div></div>
+        <div id="trk" style="background:var(--linen);border-radius:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;border:0.5px solid var(--stone)">
+          <div><div class="t-label t-muted" style="margin-bottom:2px">${wkTheme(d)}</div><div class="t-title">${wkEx(d)}</div></div>
+          <div style="color:var(--stone);font-size:18px">›</div>
+        </div>
+      </div></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="card" id="jc-btn" style="padding:14px;cursor:pointer">
+          <div class="t-label t-muted" style="margin-bottom:6px">Journal</div>
+          <div style="font-family:var(--serif);font-size:26px;color:var(--text);margin-bottom:2px">${jc}</div>
+          <div class="t-body t-muted" style="font-size:11px">${jc===1?'entry written':'entries'} ${jc>0?'— keep going.':'— start today.'}</div>
+        </div>
+        <div class="card-dark" style="padding:14px;border-radius:var(--r-lg)">
+          <div class="t-label" style="color:var(--dusk);margin-bottom:6px">Next milestone</div>
+          <div style="font-family:var(--serif);font-size:13px;color:var(--linen);margin-bottom:4px;line-height:1.4">${milestone(d)}</div>
+          <div class="t-label t-muted">${mDays(d)} days away</div>
+        </div>
+      </div>
+      <div class="card-dark"><div class="card-pad">
+        <div class="t-label" style="color:var(--dusk);margin-bottom:10px">From your community</div>
+        <div style="background:var(--dark2);border-radius:10px;padding:12px 14px">
+          <div class="t-label" style="color:var(--dark3);margin-bottom:5px">3–6 MONTHS · SHARED EXPERIENCE</div>
+          <div style="font-family:var(--serif);font-size:13px;color:#C4B4AA;line-height:1.6;font-style:italic">"The first time I cooked dinner for just me and the kids I cried. Then it became my favourite part of the week. It gets different."</div>
+        </div>
+      </div></div>
+      <div style="height:10px"></div>
+    </div>`;
+  on(w,'#cc','click',()=>{S.screen='companion';loadConvs().then(convs=>{S.convs=convs;if(!convs.length){const op=`Hi ${S.userName}. I'm glad you're here. No agenda today — just us, and whatever you want to bring. How are you feeling right now, honestly?`;saveMsg('assistant',op);S.convs=[{role:'assistant',content:op}];}R();});});
+  on(w,'#jc-btn','click',()=>{S.screen='journal';loadJData().then(R);});
+  on(w,'#trk','click',()=>{S.screen='journal';loadJData().then(R);});
+  on(w,'#av','click',()=>{if(confirm(`Sign out, ${S.userName}?`))signOut();});
+  w.querySelectorAll('[data-m]').forEach(b=>b.addEventListener('click',async()=>{
+    const m=b.dataset.m; S.todayMood=m;
+    w.querySelectorAll('[data-m]').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active'); await saveMood(m);
+  }));
+  return w;
+}
+
+// ── COMPANION ──────────────────────────────────────────────────
+function rCompanion() {
+  const w = el('div','screen dark-bg');
+  const msgs = S.convs.map(m=>
+    m.role==='assistant'
+      ?`<div class="bubble-row fade-in"><div class="av-dot"><div class="av-inner"></div></div><div class="bubble-c">${m.content}</div></div>`
+      :`<div class="bubble-row fade-in" style="justify-content:flex-end"><div class="bubble-u">${m.content}</div></div>`
+  ).join('');
+  const typ = S.isTyping?`<div class="bubble-row fade-in"><div class="av-dot"><div class="av-inner"></div></div><div class="typing-wrap"><div class="td"></div><div class="td"></div><div class="td"></div></div></div>`:'';
+  w.innerHTML=`
+    <div class="status-bar status-dark"><span>9:41</span><span>●●●</span></div>
+    <div style="padding:10px 16px 12px;display:flex;align-items:center;gap:10px;border-bottom:0.5px solid var(--dark2);background:var(--dark);flex-shrink:0">
+      <div id="bk" style="color:var(--dusk);font-size:20px;cursor:pointer;padding:2px 6px;line-height:1">‹</div>
+      <div class="av-dot"></div>
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:500;color:var(--linen)">Your companion</div>
+        <div class="t-label t-muted" style="font-size:9px">beside you · day ${S.dayCount}</div>
+      </div>
+    </div>
+    <div id="thread" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px">
+      <div class="t-label" style="text-align:center;color:var(--dark3)">Today</div>
+      ${msgs}${typ}
+    </div>
+    <div style="padding:8px 12px 16px;border-top:0.5px solid var(--dark2);background:var(--dark);flex-shrink:0">
+      <div style="display:flex;gap:8px;align-items:flex-end">
+        <textarea id="mi" class="input input-dark" placeholder="Write back…" style="flex:1;border-radius:20px;resize:none;min-height:40px;padding:10px 14px;line-height:1.4" rows="1"></textarea>
+        <button id="sb-btn" style="width:38px;height:38px;border-radius:50%;background:var(--terra);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8L14 2L8 14L7 9L2 8Z" fill="#2D2420"/></svg>
+        </button>
+      </div>
+    </div>`;
+  setTimeout(()=>{
+    const thread=w.querySelector('#thread'); thread.scrollTop=thread.scrollHeight;
+    on(w,'#bk','click',()=>{S.screen='home';R();});
+    const inp=w.querySelector('#mi');
+    const send=async()=>{
+      const t=inp.value.trim(); if(!t||S.isTyping)return;
+      inp.value=''; inp.style.height='auto';
+      S.convs.push({role:'user',content:t}); await saveMsg('user',t);
+      S.isTyping=true; R();
+      try{
+        const reply=await ai(S.convs.map(m=>({role:m.role,content:m.content})),SYS_COMPANION());
+        S.convs.push({role:'assistant',content:reply}); await saveMsg('assistant',reply);
+      }catch(e){S.convs.push({role:'assistant',content:"I'm having trouble connecting right now (" + (e.message||'unknown error') + "). Please check your Anthropic API key and try again."});}
+      S.isTyping=false; R();
+    };
+    on(w,'#sb-btn','click',send);
+    inp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}});
+    inp.addEventListener('input',()=>{inp.style.height='auto';inp.style.height=Math.min(inp.scrollHeight,120)+'px';});
+  },0);
+  return w;
+}
+
+// ── JOURNAL ────────────────────────────────────────────────────
+async function loadJData() {
+  S.journalEntries=await loadJournals();
+  if(!S.jPrompt){
+    S.jLoading=true; R();
+    try{ S.jPrompt=await ai([{role:'user',content:'prompt'}],SYS_JOURNAL()); }
+    catch(e){ S.jPrompt='What has surprised you most about yourself in the last few weeks?'; }
+    S.jLoading=false;
+  }
+}
+
+function rJournal() {
+  const w = el('div','screen linen-bg');
+  const ents=S.journalEntries.slice(0,5);
+  w.innerHTML=`
+    <div class="status-bar status-light"><span>9:41</span><span>●●●</span></div>
+    <div style="padding:10px 20px 14px;border-bottom:0.5px solid var(--stone);flex-shrink:0">
+      <div class="t-label t-muted" style="margin-bottom:4px">Your journal</div>
+      <div style="font-family:var(--serif);font-size:20px;color:var(--text)">A private record.</div>
+    </div>
+    <div class="scroll-content" style="padding:14px;display:flex;flex-direction:column;gap:12px">
+      <div class="card">
+        <div style="background:var(--dark);padding:12px 16px;border-radius:var(--r-lg) var(--r-lg) 0 0">
+          <div class="t-label" style="color:var(--dusk);margin-bottom:6px">Today's prompt</div>
+          <div style="font-family:var(--serif);font-size:14px;color:var(--linen);line-height:1.7;font-style:italic">${S.jLoading?'Finding a prompt for you…':S.jPrompt}</div>
+        </div>
+        <div style="padding:12px 16px">
+          <textarea id="ji" class="j-textarea" placeholder="Write here — this is only for you…">${S.jText}</textarea>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+            <button id="np-btn" class="btn btn-ghost-light btn-sm" style="font-size:12px">New prompt</button>
+            <button id="sv-btn" class="btn btn-primary-light btn-sm">Save entry</button>
+          </div>
+          ${S.err?`<div class="err" style="margin-top:8px">${S.err}</div>`:''}
+        </div>
+      </div>
+      ${ents.length?`<div class="t-label t-muted" style="padding:0 2px">Recent entries</div>
+        ${ents.map(e=>`<div class="card" style="padding:12px 14px">
+          <div class="t-label t-muted" style="margin-bottom:5px">${new Date(e.created_at).toLocaleDateString('en-ZA',{day:'numeric',month:'long'})}</div>
+          ${e.prompt?`<div style="font-family:var(--serif);font-size:12px;color:var(--dusk);font-style:italic;margin-bottom:5px">${e.prompt}</div>`:''}
+          <div class="t-body" style="color:var(--text);line-height:1.6;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">${e.content}</div>
+        </div>`).join('')}`:`<div style="text-align:center;padding:20px 0;font-family:var(--serif);font-size:15px;color:var(--dusk);font-style:italic">Your entries will appear here.</div>`}
+      <div style="height:8px"></div>
+    </div>`;
+  const ji=w.querySelector('#ji'); ji.addEventListener('input',()=>S.jText=ji.value);
+  on(w,'#np-btn','click',async()=>{S.jPrompt='';S.jText='';S.err='';R();await loadJData();R();});
+  on(w,'#sv-btn','click',async()=>{
+    const t=S.jText.trim(); if(!t)return; S.err='';
+    try{ await saveJournal(S.jPrompt,t); S.jText='';S.jPrompt=''; S.journalEntries=await loadJournals(); R(); }
+    catch(e){ S.err='Could not save. Check your connection.'; R(); }
+  });
+  return w;
+}
+
+// ── NAV ────────────────────────────────────────────────────────
+function rNav() {
+  const nav = el('div','bottom-nav');
+  const tabs=[['Home','home','M10 3L3 9v9h5v-5h4v5h5V9z'],['Companion','companion','M3 5a2 2 0 012-2h10a2 2 0 012 2v6a2 2 0 01-2 2H8l-4 3V5z'],['Journal','journal','M4 4a1 1 0 011-1h10a1 1 0 011 1v12l-4-2.5-4 2.5V4z']];
+  nav.innerHTML=tabs.map(([l,sc,p])=>{
+    const a=S.screen===sc;
+    return `<div class="nav-tab ${a?'active':''}" data-sc="${sc}">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="${p}" stroke="${a?'#2D2420':'#D9CFC8'}" stroke-width="1.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="nav-tab-label">${l}</span>${a?'<div class="nav-dot"></div>':''}
+    </div>`;
+  }).join('');
+  nav.querySelectorAll('[data-sc]').forEach(e=>e.addEventListener('click',async()=>{
+    const sc=e.dataset.sc; S.screen=sc;
+    if(sc==='companion'){S.convs=await loadConvs();if(!S.convs.length){const op=`Hi ${S.userName}. I'm glad you're here. How are you feeling right now?`;await saveMsg('assistant',op);S.convs=[{role:'assistant',content:op}];}}
+    if(sc==='journal')await loadJData();
+    if(sc==='home')await loadHomeData();
+    R();
+  }));
+  return nav;
+}
+
+// ── Utils ──────────────────────────────────────────────────────
+function el(tag,cls){const e=document.createElement(tag);if(cls)e.className=cls;return e;}
+function on(w,sel,ev,fn){w.querySelector(sel)?.addEventListener(ev,fn);}
+function val(id){return document.getElementById(id)?.value||'';}
+function opts(w,sel,selCls,circSel,circCls,setter,multi){
+  w.querySelectorAll(sel).forEach(e=>e.addEventListener('click',()=>{
+    const v=e.dataset.v;
+    if(!multi){w.querySelectorAll(sel).forEach(x=>{x.classList.remove(selCls);x.querySelector('.'+circSel)?.classList.remove(circCls);});}
+    const isSel=e.classList.contains(selCls);
+    if(multi){e.classList.toggle(selCls,!isSel);e.querySelector('.'+circSel)?.classList.toggle(circCls,!isSel);}
+    else{e.classList.add(selCls);e.querySelector('.'+circSel)?.classList.add(circCls);}
+    setter(v);
+  }));
+}
+function cpPrompt(){const p=['How are you actually feeling today?','What\'s been sitting with you this week?','Tell me about one small thing that felt okay recently.','How are the children doing? And underneath that — how are you?','What does your day look like, and how are you feeling going into it?'];return p[Math.floor(Math.random()*p.length)];}
+function wkTheme(d){const t=['Week 1 · Grounding','Week 2 · Grief','Week 3 · Children','Week 4 · Identity','Week 5 · Routine','Week 6 · Social life','Week 7 · Finances','Week 8 · Self-worth','Week 9 · New chapter','Week 10 · Looking forward'];return t[Math.min(Math.floor((d-1)/7),t.length-1)];}
+function wkEx(d){const e=['What does safety feel like for you right now?','Letting yourself grieve what you lost.','How to talk to your children with honesty.','Who are you outside this marriage?','Building routines that belong to you.','The friendships worth keeping.','Your financial ground truth.','What you\'ve learned about yourself.','Imagining your next chapter.','The person you\'re becoming.'];return e[Math.min(Math.floor((d-1)/7),e.length-1)];}
+function milestone(d){if(d<7)return'First week complete';if(d<30)return'One month beside yourself';if(d<60)return'Two months of showing up';return'90-day track complete';}
+function mDays(d){if(d<7)return 7-d;if(d<30)return 30-d;if(d<60)return 60-d;return Math.max(90-d,0);}
+
+// ── Boot ───────────────────────────────────────────────────────
+async function boot() {
+  const u=LS.get('url'),k=LS.get('key'),a=LS.get('akey');
+  if(!u||!k||!a){S.screen='setup';R();return;}
+  S.sbUrl=u;S.sbKey=k;S.anKey=a;S.loading=true;R();
+  try{
+    await initSB(u,k);
+    // Supabase handles OAuth hash/PKCE exchange automatically on getSession()
+    const {data:{session}}=await sb.auth.getSession();
+    if(session) await handleSession(session); else S.screen='auth';
+  }catch(e){S.err=e.message;S.screen='setup';}
+  S.loading=false;R();
+}
+boot();
+</script>
+</body>
+</html>
