@@ -1639,10 +1639,10 @@ function rFaithOb() {
 function rFaithHome() {
   const w = el('div','screen linen-bg');
   const done = S.faith.modulesCompleted;
-  const pct = Math.round((done.length/total)*100);
   const visibleModules = FAITH_MODULES.filter(m=> m.num!==9 || S.faith.hasChildren!==false);
-  const nextM = visibleModules.find(m=>!done.includes(m.num)) || visibleModules[visibleModules.length-1];
   const total = visibleModules.length;
+  const nextM = visibleModules.find(m=>!done.includes(m.num)) || visibleModules[visibleModules.length-1];
+  const pct = Math.round((done.length/total)*100);
 
   w.innerHTML=`
     <div class="status-bar" style="background:var(--amber-light)"><span style="font-size:11px;color:var(--amber-dark)">9:41</span><span style="font-size:11px;color:var(--amber)">●●●</span></div>
