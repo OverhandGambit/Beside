@@ -108,6 +108,17 @@
   .fade-in { animation: fi 0.3s ease forwards; }
   @keyframes fi{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
 
+  /* ── 90-Day Recovery Track — Blue design system ── */
+  :root {
+    --blue: #3D6CB5; --blue-light: #EBF0FA; --blue-dark: #2A4D8F;
+    --blue-mid: #5B85CC; --blue-border: #9AB3E8;
+  }
+  .btn-rec { background: var(--blue); color: #fff; border: none; }
+  .btn-rec:hover:not(:disabled) { opacity: 0.88; }
+  .btn-rec:disabled { opacity: 0.5; cursor: not-allowed; }
+  .rec-progress { height: 4px; border-radius: 2px; background: var(--blue-light); overflow: hidden; }
+  .rec-progress-fill { height: 100%; border-radius: 2px; background: var(--blue); }
+
   /* ── Faith & Divorce Track — Amber design system ── */
   :root {
     --amber: #BA7517; --amber-light: #FAEEDA; --amber-dark: #854F0B;
@@ -158,9 +169,13 @@ const LS = {
   set: (k,v) => { try { localStorage.setItem('bsd_'+k,v); } catch(e){} },
 };
 
+// ── Hardcoded credentials (test build) ─────────────────────────
+const SUPABASE_URL = 'https://qqpcfvmzdbtcsnqmtjzb.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFxcGNmdm16ZGJ0Y3NucW10anpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM4MzUwOTQsImV4cCI6MjA4OTQxMTA5NH0.mhEm9_JpJJ_uwBcrsS0fGOd9n4Xd7DHepYRgEq_Deiw';
+
 let sb = null;
 let S = {
-  screen:'setup', sbUrl:LS.get('url'), sbKey:LS.get('key'), anKey:LS.get('akey'),
+  screen:'splash', sbUrl:SUPABASE_URL, sbKey:SUPABASE_KEY, anKey:'',
   authMode:'signin', authEmail:'', authPass:'', authName:'',
   userId:null, userName:'', userStage:'', userPriorities:[],
   obStep:0,
@@ -168,8 +183,14 @@ let S = {
   jConvs:[], jIsTyping:false, jPhase:'write',
   todayMood:'', journalEntries:[], jPrompt:'', jText:'', jLoading:false,
   dayCount:1, streak:1,
+  homeGreeting:'', homeGreetingLoading:false,
   err:'', loading:false, verifyPending:false,
   isChristian: null,
+  recovery: {
+    daysCompleted:[], jEntries:[], currentDayNum:1,
+    jText:'', gratText:'', saving:false, err:'',
+    companionConvs:[], companionTyping:false,
+  },
   faith: {
     enrolled:false, obStep:0, stage:'', denominations:[], concerns:[],
     journalConsent:false, hasChildren:null, modulesCompleted:[], currentModule:0,
@@ -256,7 +277,29 @@ alter table beside_faith_journal enable row level security;
 drop policy if exists "own_fp" on beside_faith_progress;
 drop policy if exists "own_fj" on beside_faith_journal;
 create policy "own_fp" on beside_faith_progress for all using (user_id = auth.uid());
-create policy "own_fj" on beside_faith_journal for all using (user_id = auth.uid());`;
+create policy "own_fj" on beside_faith_journal for all using (user_id = auth.uid());
+
+-- 90-Day Recovery Track tables
+create table if not exists beside_recovery_progress (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references beside_users(id) on delete cascade,
+  days_completed int[] default '{}',
+  enrolled_at timestamptz default now()
+);
+create table if not exists beside_recovery_journal (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references beside_users(id) on delete cascade,
+  day_num int not null,
+  entry_type text not null,
+  content text not null,
+  created_at timestamptz default now()
+);
+alter table beside_recovery_progress enable row level security;
+alter table beside_recovery_journal enable row level security;
+drop policy if exists "own_rp" on beside_recovery_progress;
+drop policy if exists "own_rj" on beside_recovery_journal;
+create policy "own_rp" on beside_recovery_progress for all using (user_id = auth.uid());
+create policy "own_rj" on beside_recovery_journal for all using (user_id = auth.uid());`;
 
 // ── DB helpers ─────────────────────────────────────────────────
 async function initSB(url, key) {
@@ -358,6 +401,28 @@ async function loadFaithJournals() {
   const { data } = await sb.from('beside_faith_journal').select('*')
     .eq('user_id', S.userId).order('created_at', { ascending: false }).limit(50);
   return data || [];
+}
+
+// ── Recovery DB helpers ────────────────────────────────────────
+async function loadRecoveryProgress() {
+  const { data } = await sb.from('beside_recovery_progress').select('*').eq('user_id',S.userId).maybeSingle();
+  return data;
+}
+async function saveRecoveryProgress(fields) {
+  const { data:ex } = await sb.from('beside_recovery_progress').select('id').eq('user_id',S.userId).maybeSingle();
+  if(ex) await sb.from('beside_recovery_progress').update(fields).eq('user_id',S.userId);
+  else await sb.from('beside_recovery_progress').insert({user_id:S.userId,...fields});
+}
+async function loadRecoveryJournals(dayNum) {
+  let q = sb.from('beside_recovery_journal').select('*').eq('user_id',S.userId);
+  if(dayNum) q = q.eq('day_num',dayNum);
+  const { data } = await q.order('created_at',{ascending:false}).limit(50);
+  return data||[];
+}
+async function saveRecoveryJournal(dayNum, entryType, content) {
+  const ex = S.recovery.jEntries.find(e=>e.day_num===dayNum&&e.entry_type===entryType);
+  if(ex) await sb.from('beside_recovery_journal').update({content}).eq('id',ex.id);
+  else await sb.from('beside_recovery_journal').insert({user_id:S.userId,day_num:dayNum,entry_type:entryType,content});
 }
 
 // ── Faith system prompts ───────────────────────────────────────
@@ -696,6 +761,586 @@ const DEEP_DIVES = [
   },
 ];
 
+// ── 90-Day Recovery Track Data ────────────────────────────────
+const RECOVERY_WEEKS = [
+  {week:1, phase:"Survive", title:"First Breath"},
+  {week:2, phase:"Survive", title:"Letting It Be Hard"},
+  {week:3, phase:"Survive", title:"One Day at a Time"},
+  {week:4, phase:"Stabilise", title:"Finding Ground"},
+  {week:5, phase:"Stabilise", title:"Small Rhythms"},
+  {week:6, phase:"Stabilise", title:"What Remains"},
+  {week:7, phase:"Rebuild", title:"Who You Are Now"},
+  {week:8, phase:"Rebuild", title:"Your Relationships"},
+  {week:9, phase:"Rebuild", title:"Practical Life"},
+  {week:10, phase:"Rebuild", title:"Your Body, Your Energy"},
+  {week:11, phase:"Thrive", title:"The Longer View"},
+  {week:12, phase:"Thrive", title:"New Possibilities"},
+  {week:13, phase:"Thrive", title:"The Person You're Becoming"},
+];
+const RECOVERY_DAYS = [
+// ── Week 1 — First Breath ────────────────────────────────────
+{day:1,week:1,milestone:true,
+reading:"You made it here. That took something — honesty, maybe courage, or just the necessity of needing a place to land. You don't have to know what comes next. You don't have to feel okay. You just have to be here, one day at a time. This is day one.",
+journal:"What brought you here today? Not the story of the divorce — what made you open this right now?",
+reflection:"What does 'getting through today' look like for you right now?",
+action:"Take three slow breaths. Then do one small thing that is purely for you — a cup of tea, a walk, ten minutes of quiet.",
+gratitude:"Name one person, thing, or moment today that gave you something, however small."},
+{day:2,week:1,
+reading:"Grief doesn't follow rules. It shows up at the wrong times — in the supermarket, in the car, at 2am. That's not failure. That's loss doing what loss does. You're not broken. You're grieving.",
+journal:"Where does the grief catch you off guard? When does it show up when you don't expect it?",
+reflection:"What do you do when grief arrives unexpectedly? What do you wish you could do?",
+action:"Give yourself permission to feel whatever arrives today without trying to manage it. If you cry, cry. If you're angry, notice it. Don't rush past it.",
+gratitude:"What has stayed the same in your life — something reliable, unchanged?"},
+{day:3,week:1,
+reading:"Other people will have opinions about your divorce. Some will say the wrong thing with good intentions. Some will disappear. Some will surprise you. You don't have to manage their feelings about your life. Your job right now is just to manage yours.",
+journal:"Who has surprised you — positively or negatively — in how they've responded?",
+reflection:"Whose opinion matters most to you right now, and why?",
+action:"Identify one person you trust. Send them a message today — not to explain anything, just to stay in contact.",
+gratitude:"Think of one person who has shown up for you, however imperfectly."},
+{day:4,week:1,
+reading:"The practical things pile up fast. Paperwork, finances, housing, the children's schedule. For today: you don't have to tackle everything. One thing. Just one thing from the list.",
+journal:"What's the one practical matter that weighs on you most? Write about why it feels so heavy.",
+reflection:"What would it feel like to have that one thing handled?",
+action:"Choose the single most pressing practical task and do one small step toward it — even if that step is just finding the right phone number.",
+gratitude:"What resource do you have right now — financial, practical, or personal — that you're grateful for?"},
+{day:5,week:1,
+reading:"Sleep, food, movement. These are the basics, and they're the first things to go under stress. You can't think clearly, grieve well, or make good decisions when your body is running on empty. This week, the work is just keeping the body going.",
+journal:"How are you sleeping? Eating? Moving? Write honestly about how you're taking care of your body right now.",
+reflection:"What's one physical thing your body is telling you it needs?",
+action:"Eat one proper meal today. Not perfect — proper. Sit down. Put it on a plate. Take your time.",
+gratitude:"What does your body still do well, even now?"},
+{day:6,week:1,
+reading:"The house feels different. Maybe it's too quiet. Maybe it's too loud. Maybe you're in a new place that doesn't feel like home yet. The physical space of your life has changed, and that change is real. You're allowed to mourn it.",
+journal:"Describe your living situation right now. How does it feel to be in this space?",
+reflection:"What would make your current space feel more like yours?",
+action:"Do one small thing to make your space more comfortable or more yours today — a plant, rearranged furniture, a candle, one clean corner.",
+gratitude:"What do you have in your space right now that you're glad to have?"},
+{day:7,week:1,milestone:true,
+reading:"You've been here a week. That might feel like nothing. It might feel like an enormous amount. Either is right. What you've done is show up, seven days in a row, when showing up cost you something. That's not nothing. That's the entire thing.",
+journal:"One week in. What has been the hardest moment? And what has been, even if just for a moment, okay?",
+reflection:"What do you know about yourself now that you didn't know — or hadn't admitted — a week ago?",
+action:"Mark this week. Write yourself a one-line note: what you want to remember about this first week.",
+gratitude:"What are you grateful for about yourself this week?"},
+// ── Week 2 — Letting It Be Hard ─────────────────────────────
+{day:8,week:2,
+reading:"There's a pressure to start recovering quickly. To 'move on.' To show you're okay. That pressure is not your friend. Real recovery is mostly slow — and the attempt to rush it tends to bury things that need to be felt.",
+journal:"Are you feeling pressure to be 'better' already? Where does that pressure come from?",
+reflection:"What would you say to a close friend who felt they should be further along?",
+action:"Tell one person in your life that you're not okay yet, and that's okay. Even if it's just a text.",
+gratitude:"What is one thing that has gotten even slightly easier since day one?"},
+{day:9,week:2,
+reading:"Anger is part of grief. Divorce brings specific kinds of anger — at the situation, at your ex, at yourself, at the unfairness of it. That anger deserves space. The problem isn't feeling it. The problem is what we do when we haven't given it room.",
+journal:"What are you most angry about right now? Write it out without editing yourself.",
+reflection:"Is there anger you haven't let yourself feel because it seems wrong or unfair?",
+action:"Do something physical with the energy today — walk fast, run, dig in the garden, clean vigorously. Let your body carry some of it.",
+gratitude:"What has anger, at any point, helped you see clearly?"},
+{day:10,week:2,
+reading:"Shame says: this is who you are. Guilt says: this is something you did. These are different things, and confusing them makes it harder to heal from either. You are not your divorce. You are a person who is going through one.",
+journal:"What do you feel guilty about in the marriage or divorce? And what do you feel shame about? Can you tell the difference?",
+reflection:"What would you need to believe about yourself to release the shame?",
+action:"Write down three things that are true about you that have nothing to do with the marriage. Things that existed before, and exist still.",
+gratitude:"What quality in yourself are you glad to still have?"},
+{day:11,week:2,
+reading:"The children, if you have them, are going through their own version of this — and they're watching how you handle yours. You don't have to pretend everything is fine. You just have to let them see you cope, not collapse.",
+journal:"If you have children: how are they doing? What worries you most for them? If not: who in your life is watching how you handle this, and what do you want them to see?",
+reflection:"What do you want the people closest to you to understand about what you're going through?",
+action:"If you have children, do one simple unhurried thing with them today — a meal, a walk, a game. Be present without explaining anything.",
+gratitude:"Name one person in your life who loves you without conditions."},
+{day:12,week:2,
+reading:"The story you tell yourself about the marriage matters. Whether you tell it as your failure, their failure, or the failure of two people who tried and couldn't — that narrative shapes how you carry this. You don't have to settle on one story yet. Just notice which story you're telling.",
+journal:"What story are you telling about the end of the marriage? Who is the protagonist? Who, if anyone, is the villain?",
+reflection:"If you told the story more generously to yourself — or more honestly about both people — what would change?",
+action:"Write two sentences about the marriage that are fair to both of you. Not forgiving — just fair.",
+gratitude:"What did you learn in the marriage that you're grateful to carry forward?"},
+{day:13,week:2,
+reading:"Divorce changes your social world. Friends take sides, sometimes without meaning to. Some disappear. Some get closer. It's a kind of social grief that runs underneath the primary grief — the loss of 'our friends,' shared dinners, the life you built together.",
+journal:"How has your social world changed since the separation? Who has stayed? Who has gone? Who has surprised you?",
+reflection:"What kind of social support do you most need right now that you're not getting?",
+action:"Reach out to one friendship you value but have let drift. Just check in. It doesn't have to be about the divorce.",
+gratitude:"Name one friendship you're genuinely grateful for right now."},
+{day:14,week:2,
+reading:"Two weeks. You are still here. The pain hasn't passed — but you are carrying it. That's different from being crushed by it. The distance between being in pain and being destroyed by pain is survivability. You are surviving.",
+journal:"Two weeks in. What have you survived so far that you weren't sure you could?",
+reflection:"What is the difference between surviving and thriving — and where are you on that line right now?",
+action:"Look back at your day one entry. What has changed in two weeks, even a little?",
+gratitude:"What do you have right now that you didn't have yesterday?"},
+// ── Week 3 — One Day at a Time ───────────────────────────────
+{day:15,week:3,
+reading:"The future is impossible to see right now, and that's okay. You don't need to see it. The only horizon that matters is today. Just today. What needs to happen today — not the month, not the year, just today.",
+journal:"When you think about the future, what do you feel? Fear, relief, blankness, hope — or something else?",
+reflection:"What do you need to stop thinking about for now, because it belongs to a future you can't see yet?",
+action:"Write a list of just today's priorities. Not the week's. Not the month's. Just today's. Then do the first thing on it.",
+gratitude:"What is good about today, specifically — even if it's very small?"},
+{day:16,week:3,
+reading:"Money and divorce are complicated. Legal fees, changing income, new housing costs. Financial anxiety is one of the most common and least talked about parts of this. Whatever your situation, the fear deserves to be named rather than pushed down.",
+journal:"What's your biggest financial worry right now? Write it out plainly — what is the actual fear underneath it?",
+reflection:"What would 'financially stable enough' look like for you in a year?",
+action:"Do one small financial task today: look at a bank statement, make a call, find one piece of information. Just one.",
+gratitude:"What do you have financially that you're grateful for, however modest?"},
+{day:17,week:3,
+reading:"Identity. Who are you now that the marriage is over? The question feels too big to answer, but it's already being answered every day — by the choices you make, the person you're showing up as, the things you're finding you care about.",
+journal:"What have you discovered about yourself since the separation that surprised you — something you didn't know or had forgotten?",
+reflection:"What aspects of yourself do you feel most uncertain about right now?",
+action:"Do one thing today that is purely an expression of who you are — not who you were in the marriage, not who you think you should be.",
+gratitude:"What is something about yourself you're genuinely glad to have?"},
+{day:18,week:3,
+reading:"Rest is not laziness. In acute grief and upheaval, rest is recovery work. The pressure to be productive, to be seen to be managing — that pressure can make you ignore what your body and mind actually need. Today: permission to rest.",
+journal:"When did you last genuinely rest? What does rest look like for you — and are you getting enough of it?",
+reflection:"What gets in the way of allowing yourself to rest?",
+action:"Build one hour of rest into today. Not passive scrolling — real rest. A bath, sleep, sitting in silence, walking slowly.",
+gratitude:"What feels restorative to you right now? Name even one thing."},
+{day:19,week:3,
+reading:"Resentment builds when we don't acknowledge hurt. It accumulates slowly, makes us harder, less available to our own lives. This isn't about forgiving your ex — that comes later. This is just about not letting the resentment become the primary thing.",
+journal:"What are you holding onto that is costing you energy — resentment, unfinished business, a conversation that never happened?",
+reflection:"What would it mean to put that thing down — not forgive it, just not carry it so tightly?",
+action:"Write a letter you'll never send. Say what you need to say. Then put it away.",
+gratitude:"What have you let go of since this began that you're relieved to no longer be carrying?"},
+{day:20,week:3,
+reading:"You're three weeks in. The acute crisis phase is beginning to stabilise, even if it doesn't feel like it. The chaos doesn't go away — but something underneath it begins, slowly, to settle. You may not feel it yet. But the stabilisation is happening.",
+journal:"What feels slightly more settled than it did three weeks ago, even if it's only one small thing?",
+reflection:"What is the most important thing you've learned about what you actually need?",
+action:"Write down three things that have helped in these three weeks — even small things. Keep that list somewhere you can find it.",
+gratitude:"What has this difficult period revealed about your own strength?"},
+{day:21,week:3,
+reading:"Three weeks. You've survived the very hardest part — not because it's over, but because you've proven to yourself that you can. The next phase is different: less about getting through, more about finding ground. That starts now.",
+journal:"Three weeks in — what has changed in you, even a little, since day one?",
+reflection:"What do you want the next three weeks to look like, in the simplest possible terms?",
+action:"Look back at your week one entries. What would you say to the person who wrote those words?",
+gratitude:"What are you grateful for about how far you've come, even if it doesn't feel far enough?"},
+// ── Week 4 — Finding Ground ──────────────────────────────────
+{day:22,week:4,
+reading:"Stabilisation is different from healing. It just means the ground has stopped moving under your feet long enough for you to find your footing. It doesn't mean okay. It means: I know where I am. That's enough for now.",
+journal:"What does 'finding your footing' mean for you right now? What would it feel like to be more grounded?",
+reflection:"What is one area of your life where you feel most unsteady?",
+action:"Establish one small daily anchor for this week — a morning routine, a regular mealtime, a walk. Consistency is ground.",
+gratitude:"What feels more solid today than it did three weeks ago?"},
+{day:23,week:4,
+reading:"The legal and practical process takes longer than anyone tells you. It runs in the background, demanding attention at irregular intervals. The stress of uncertainty is real and different from grief. Both are happening at once.",
+journal:"What practical or legal matter is weighing on you most right now? What's the fear underneath it?",
+reflection:"Who is helping you with the practical side of this? Who do you wish was helping?",
+action:"Identify one person — a lawyer, a financial advisor, a friend who's been through it — who could give you specific, useful advice on one matter. Make contact.",
+gratitude:"What has been handled that you were worried wouldn't be?"},
+{day:24,week:4,
+reading:"Sleep changes in crisis. Maybe you can't fall asleep. Maybe you can't stay asleep. Maybe you're sleeping too much as an escape. Your sleep quality is directly connected to how you're coping during the day. It deserves attention.",
+journal:"What is your sleep like right now? What goes through your mind in the dark? What helps?",
+reflection:"What would need to change for you to sleep better?",
+action:"Pick one sleep practice and commit to it this week: no screens an hour before bed, a consistent time, a short breathing practice.",
+gratitude:"Name one moment yesterday when you felt even briefly at peace."},
+{day:25,week:4,
+reading:"Work can become either a refuge or an additional source of stress. Many people find it helpful in this period — it provides structure, purpose, and interruption from the internal monologue. Others find it's one thing too many. Which is it for you?",
+journal:"How is work going right now? Is it a refuge or a weight — or both?",
+reflection:"What do you need from your work life right now that you're not getting?",
+action:"If work is a weight: identify one thing to ask for or change. If it's a refuge: let yourself be glad of it today.",
+gratitude:"What does your work give you that you're grateful for?"},
+{day:26,week:4,
+reading:"When we're in prolonged stress, the fundamentals — sleep, food, movement, connection — are the things that keep us functional. Not luxuries. Infrastructure. Self-care is not indulgence. It's the maintenance of the machinery that carries everything else.",
+journal:"Rate your current fundamentals honestly: sleep, food, movement, connection. Where are the biggest gaps?",
+reflection:"What's one thing you could do this week to address the biggest gap?",
+action:"Take a walk today — at least 20 minutes — with no destination and no podcast. Just you and the outside world.",
+gratitude:"What small pleasure did you allow yourself today?"},
+{day:27,week:4,
+reading:"Your ex is a person too. Whatever happened, whatever was done — the marriage was made by two people and ended by two people. You don't have to feel sympathy. But bitterness that goes unexamined tends to calcify into something that harms you more than them.",
+journal:"What do you still feel about your ex that you haven't fully looked at — not the anger, but what's underneath it?",
+reflection:"What do you hope for your ex's life, if anything? It's okay if the answer is 'nothing yet.'",
+action:"Write down one thing you respected about your ex during the marriage. Just one. You don't have to share it with anyone.",
+gratitude:"What aspect of the marriage, however painful its ending, are you genuinely glad happened?"},
+{day:28,week:4,milestone:true,
+reading:"One month. This is a real milestone — not because everything is fixed, but because you've covered the hardest ground. Month one after separation is statistically the most acute. You're through it. The road ahead is still long, but it's different now.",
+journal:"One month in. Write to yourself: what you've survived, what you know now, what you're carrying differently.",
+reflection:"What has changed in you in one month that you want to keep?",
+action:"Do something today that marks this month — not a celebration of the divorce, but an acknowledgment of your own endurance. A meal you love, something in nature, something that means something to you.",
+gratitude:"What are you most grateful to have made it through?"},
+// ── Week 5 — Small Rhythms ───────────────────────────────────
+{day:29,week:5,
+reading:"Routines are not a small thing. After upheaval, the reassertion of predictable rhythms is one of the fastest ways to rebuild a sense of self. Waking at the same time. A morning practice. A walk. Small things — but they make a skeleton for the day.",
+journal:"What rhythms or routines are helping you right now? What rhythms are missing that used to anchor you?",
+reflection:"What would your ideal daily routine look like? What's preventing it?",
+action:"Identify one daily practice to establish this week. Commit to it for seven days.",
+gratitude:"What familiar habit or ritual are you glad you still have?"},
+{day:30,week:5,milestone:true,
+reading:"Thirty days. One month of showing up. Whatever else is true, this is true: you have chosen, every day for thirty days, to engage with your own recovery rather than turn away from it. That is not a small thing. It is the whole thing.",
+journal:"Day thirty. What has this month given you — not fixed, not resolved, but given you? What do you know now that you didn't know then?",
+reflection:"Who was the most important person to your survival this month — and have you told them?",
+action:"Tell one person in your life that you've made it a month. You don't have to explain what that means. But say it.",
+gratitude:"Looking at the full thirty days: what moment, however small, are you most grateful for?"},
+{day:31,week:5,
+reading:"Anger at yourself is common in divorce. We replay the moments of failure — the things we said, the patterns we couldn't break. The question is not whether self-criticism is warranted. It's whether it's useful. Is the inventory serving you, or is it a loop?",
+journal:"What are you most critical of yourself about in the marriage? Is that criticism helping you, or is it just noise?",
+reflection:"What would you say to a close friend who was running the same loop about themselves?",
+action:"Write down one thing you did well in the marriage. Not to balance the bad — just because it's also true.",
+gratitude:"What quality in yourself are you grateful for, right now, specifically?"},
+{day:32,week:5,
+reading:"Social media and divorce are a difficult combination. Your ex's life becomes available to you in ways that can set back weeks of progress in minutes. How it affects you is entirely your business — and worth being deliberate about.",
+journal:"What do you do with information about your ex that comes through social media or mutual friends? How does it affect you?",
+reflection:"What would be the most self-protective thing you could do with that information flow right now?",
+action:"If there's a social media account or mutual friend's updates that is harming you: mute, unfollow, or step back. You can undo it later.",
+gratitude:"What aspect of your current life is better than it would appear on social media?"},
+{day:33,week:5,
+reading:"Loneliness is one of the most honest parts of divorce. Not the loneliness of being alone — the loneliness of having been close to someone and now not being. That specific loneliness, the kind that knows what it's missing, is very hard. It can't be fixed by company. It needs to be grieved.",
+journal:"What kind of loneliness are you experiencing right now? Is it the aloneness of a quiet house, or something deeper?",
+reflection:"What would it mean to grieve the specific companionship you've lost, rather than trying to fill it?",
+action:"Spend an evening alone intentionally — not distracted, not filling it. Just you and the quiet. See what comes up.",
+gratitude:"What have you learned about yourself from being more alone than you used to be?"},
+{day:34,week:5,
+reading:"The healing process is not linear. You will have good days followed by surprisingly bad days. Something will trigger you — a song, a date, a smell — and you'll feel like you're back at day one. You're not. Regression is part of the process. The bad day doesn't undo the progress.",
+journal:"Have you had a setback day recently? What triggered it? What did you do?",
+reflection:"What do you notice about the things that still catch you off guard?",
+action:"Identify your two or three biggest current triggers. Write them down. Knowing them is the beginning of navigating them.",
+gratitude:"What have you recovered from this week — even a small moment of feeling worse and then better?"},
+{day:35,week:5,
+reading:"Five weeks in. You are no longer in crisis mode. The task is shifting from survival to stabilisation — from 'getting through the day' to 'beginning to build something.' That shift happens gradually. It's already happening.",
+journal:"Five weeks in — what does your daily life look like now compared to week one? What has changed in your patterns or state of mind?",
+reflection:"What is one thing you have rebuilt or stabilised in the last five weeks, however small?",
+action:"Make a list of three things in your life that are working right now. Not things that need fixing — things that are actually working.",
+gratitude:"What does 'stability' feel like to you right now, even partially?"},
+// ── Week 6 — What Remains ────────────────────────────────────
+{day:36,week:6,
+reading:"What did you love before the marriage? Not things you shared with your ex — the things that were yours, that you brought into the relationship. Divorce is also, sometimes, a return to self. Some of those things are still there, waiting.",
+journal:"What did you love before the marriage — hobbies, interests, pleasures — that got set aside or diminished during it?",
+reflection:"What would it mean to reclaim one of those things now?",
+action:"Do one thing today that you loved before the marriage and haven't done enough of since.",
+gratitude:"What part of your pre-marriage self are you glad to be reconnecting with?"},
+{day:37,week:6,
+reading:"The quality of your inner voice matters enormously right now. That voice narrating your life — is it supportive, or is it merciless? Most of us, under stress, become our own harshest critic. But the voice you speak to yourself with is trainable, if slowly.",
+journal:"What does your inner voice say to you most often right now? Write some of it down, as honestly as you can.",
+reflection:"Would you speak to a friend the way you speak to yourself? What would you say instead?",
+action:"Notice your inner voice three times today. Each time, ask: is this helpful? If not, say something more accurate.",
+gratitude:"What is one thing you said kindly to yourself today, or could have?"},
+{day:38,week:6,
+reading:"Some things from the marriage are worth keeping: values you developed together, friendships you made, places you love, things you learned. The ending of the marriage doesn't cancel its contents. Some of what you built is still yours.",
+journal:"What do you want to keep from the marriage — not possessions, but things you gained: values, friendships, experiences, growth?",
+reflection:"What part of the married version of you are you glad to keep?",
+action:"Write down three things the marriage gave you that you're still grateful for, even now.",
+gratitude:"What continues from the marriage into your life now that you're glad of?"},
+{day:39,week:6,
+reading:"Forgiveness is not required yet. That's a later chapter. But the resentment you carry has a weight, and at some point you'll want to examine whether you're carrying it because it's useful or because you haven't yet had the energy to put it down.",
+journal:"What resentments are you carrying? Which ones feel useful and which ones feel like they're just wearing you out?",
+reflection:"What would it feel like to put down one resentment — not forgive it, just stop actively carrying it?",
+action:"Write down one resentment you'd be willing to loosen your grip on — just slightly. Not let go, just hold a little lighter.",
+gratitude:"What has become lighter in the last six weeks, even if only a little?"},
+{day:40,week:6,
+reading:"You are becoming someone different. Not better or worse — just different. The marriage shaped you. The divorce is shaping you. Who you are becoming is still being written. That's not loss. That's the condition of being alive.",
+journal:"Who are you becoming? What qualities do you see emerging that weren't there before, or weren't as strong?",
+reflection:"What kind of person do you want to become through this, not despite it?",
+action:"Write a one-paragraph description of the person you are becoming. Not aspirational — observational. Who is actually emerging?",
+gratitude:"What are you growing into that you're grateful for?"},
+{day:41,week:6,
+reading:"The children, if you have them, are building their own story about what happened. Your relationship with them is one of the most important things you will rebuild — and it doesn't require the divorce to be resolved, just your presence to be consistent.",
+journal:"If you have children: what do you want your relationship with them to look like in a year? What do you want them to carry from this period? If you don't: what relationship most needs your consistency right now?",
+reflection:"What does consistent presence look like for you, given everything?",
+action:"Plan one thing with your children or someone you love for this week. Put it in the calendar.",
+gratitude:"What has your love for someone given you through this period?"},
+{day:42,week:6,
+reading:"Six weeks. You are solidly in the stabilisation phase now. The crisis is not over, but you're no longer just surviving it — you're beginning to shape it. That's a real shift. The next phase is about rebuilding — not just holding on, but actually building something.",
+journal:"Six weeks in. What feels different about where you are compared to week one? What have you stabilised?",
+reflection:"What is the most important thing to rebuild first?",
+action:"Write down what you want the next six weeks to feel like. Not a goal list — a feeling. How do you want to be moving through life at week twelve?",
+gratitude:"What do you have at six weeks that you didn't have at week one?"},
+// ── Week 7 — Who You Are Now ─────────────────────────────────
+{day:43,week:7,
+reading:"Identity is not fixed. It was never fixed. The version of you that existed in the marriage was a version — real, but one among several that you've been and will be. Divorce doesn't erase identity. It makes space for questions about it. Those questions are also an opening.",
+journal:"Who are you outside of the role of 'spouse' or 'ex'? What aspects of your identity feel most solid right now?",
+reflection:"What does 'knowing yourself' mean to you — and how well do you feel you know yourself right now?",
+action:"Write down five things that are true about you that have nothing to do with the marriage or divorce. Read them back. Let them be yours.",
+gratitude:"What part of your identity are you most grateful to have access to right now?"},
+{day:44,week:7,
+reading:"Values. The things you believe matter — honesty, loyalty, family, freedom, creativity. Your values may have been tested by the marriage and its ending. Some may have been clarified. This is a good time to look at what you're actually rebuilding toward.",
+journal:"What do you value most? Write your top five values. Then ask: are you living in alignment with them right now?",
+reflection:"Has this experience changed what you value, or clarified what you always valued?",
+action:"Choose the one value that feels most important right now. Make one decision today that reflects it.",
+gratitude:"What value did the marriage help you understand more deeply?"},
+{day:45,week:7,
+reading:"Boundaries. The clear knowing of what you will and won't accept from your life and the people in it. Divorce often reveals where the old boundaries were too soft. That's useful information — painful, but useful.",
+journal:"Where are you struggling with boundaries right now — in the divorce process, with your ex, with family, or with yourself?",
+reflection:"What is one boundary you know you need to strengthen? What makes that difficult?",
+action:"Name one boundary and say it out loud to yourself. Then say it to one other person, if appropriate.",
+gratitude:"What boundary have you successfully held in the last few weeks that you're proud of?"},
+{day:46,week:7,
+reading:"Confidence takes a hit in divorce. Even when it was the right decision, the experience of a relationship failing erodes trust in your own judgment, your own lovability. That erosion is temporary. It is not a verdict on who you are.",
+journal:"In what areas of your life do you feel most confident right now? Where has confidence taken the biggest hit?",
+reflection:"What would it take to rebuild confidence in the area that needs it most?",
+action:"Do one thing today that you know you're good at. Remind yourself of your competence in an area that has nothing to do with relationships.",
+gratitude:"What has this period shown you about your own competence?"},
+{day:47,week:7,
+reading:"The question of what you want is different from what you need. Wants have been temporarily suspended — the wants that involved the marriage, a shared future, the shape of the life you planned. But underneath the suspended wants, needs remain: safety, connection, purpose, growth.",
+journal:"What do you need right now — not want, but genuinely need? List them without judgment.",
+reflection:"How many of your current needs are actually being met? Which is most urgent?",
+action:"Identify the one need that is least met and take one concrete step toward meeting it today.",
+gratitude:"What need of yours is being met right now, even imperfectly?"},
+{day:48,week:7,
+reading:"Comparison is dangerous in recovery. Other people's divorces, other people's timelines — these are not useful benchmarks. Your recovery is your recovery. It has its own shape and pace. The only comparison that matters is you at day one versus you now.",
+journal:"Are you comparing your recovery to someone else's? What does that comparison feel like, and what is it doing to you?",
+reflection:"What would it mean to fully own your own timeline for healing?",
+action:"Write yourself one sentence: 'My recovery looks like ___.' Make it true, not aspirational.",
+gratitude:"What is unique about the way you're handling this that you can respect?"},
+{day:49,week:7,
+reading:"Seven weeks. You are well into the rebuild phase. The foundations have been laid. You have survived the acute phase, stabilised the basics, and begun to ask the questions of identity and values that recovery demands. The work from here is slower, less dramatic, and more permanent.",
+journal:"Seven weeks in. What have you rebuilt so far? What are you building now?",
+reflection:"What would you build next, if you could?",
+action:"Describe your ideal daily life in three months' time. Not a fantasy — something realistic and genuinely attainable.",
+gratitude:"What has the rebuilding process given you that surviving alone never could?"},
+// ── Week 8 — Your Relationships ──────────────────────────────
+{day:50,week:8,
+reading:"The relationships around you have been reorganised by the divorce — whether or not you wanted them to be. This is a good time to take stock. Who is in your life? Who has moved closer? Who has moved away? Who do you want to invest in from here?",
+journal:"Map your current relationships honestly: who is close, who is peripheral, who is absent. What do you notice?",
+reflection:"What kind of relationships do you most want in your life now, compared to before?",
+action:"Invest specifically in one relationship this week — a call, a meal, a message that's more than a check-in.",
+gratitude:"What relationship in your life are you most grateful for right now?"},
+{day:51,week:8,
+reading:"The co-parenting relationship, if you have children, is one of the most challenging things divorce creates. You're no longer in a marriage with this person, but you're permanently in a co-parenting relationship. That relationship has its own rules — different from marriage, different from friendship.",
+journal:"If you have children: how is the co-parenting relationship? What's working? What isn't? If you don't: what relationship with your ex, if any, do you need to navigate?",
+reflection:"What would a healthy, sustainable version of your relationship with your ex look like?",
+action:"Identify one concrete thing that would improve the co-parenting dynamic — something within your control — and do it or begin it.",
+gratitude:"What is your ex doing well for your children, even if it's hard to acknowledge?"},
+{day:52,week:8,
+reading:"New friendships are possible. The social reorganisation that follows divorce creates space — uncomfortable at first, but space — for different kinds of connection. People who've been through it. People who know you as you are now, not as you were.",
+journal:"Is there someone new in your life since the divorce who has become important to you? Or someone you'd like to know better?",
+reflection:"What would you want new friends to know about you — the you that exists now?",
+action:"Take one step toward a new connection this week: accept an invitation, start a conversation, say yes to something you'd normally decline.",
+gratitude:"What unexpected connection has come from this difficult time?"},
+{day:53,week:8,
+reading:"Family. Whether they've been supportive, complicated, absent, or too present — family relationships around a divorce are rarely neutral. People take positions. Old dynamics resurface. What you need and what you're getting may be very different.",
+journal:"What has your family's response to the divorce been like? What have you needed from them, and what have you actually received?",
+reflection:"What do you wish your family understood that they don't?",
+action:"If there's a family relationship that needs a direct conversation about what you need — plan how you'd have it.",
+gratitude:"What has a family member done for you during this time that meant something?"},
+{day:54,week:8,
+reading:"Intimacy after divorce is a complicated question — not just physical intimacy, but emotional intimacy, the willingness to be known. Divorce can damage the capacity for it. The rebuilding of intimacy capacity is slow and happens in friendships first, long before romantic relationships.",
+journal:"How is your capacity for closeness and vulnerability right now? Are you more guarded than before? Less?",
+reflection:"What would it take to feel safe enough to be truly known by someone again?",
+action:"Share something honest and personal with one person in your life today — something that requires a small degree of trust.",
+gratitude:"Who has allowed you to be vulnerable during this time without making you regret it?"},
+{day:55,week:8,
+reading:"The 'what people think' burden is heavy. What will people say? What do they already know? What is my ex saying? The constant awareness of being observed and judged adds exhaustion to an already exhausting situation. At some point, this burden has to be laid down.",
+journal:"Whose opinion of you feels most burdening right now? What are you afraid they think or will think?",
+reflection:"What would change if you decided that their opinion was simply not your responsibility?",
+action:"Choose one person's opinion that you are giving too much weight to, and consciously decide to release it — just for today.",
+gratitude:"Whose opinion of you has been unconditionally supportive?"},
+{day:56,week:8,
+reading:"Eight weeks. Your social world is being rebuilt, slowly and imperfectly. The relationships that have stayed were the ones worth keeping. The ones that left have made space for something more appropriate to who you're becoming.",
+journal:"Eight weeks in on relationships: who has stayed, who has gone, and what has the reshaping of your social world given you?",
+reflection:"What kind of relationships do you want to build from here?",
+action:"Write down the qualities you want in the people closest to you going forward. Let that list guide how you invest your time.",
+gratitude:"What has going through this shown you about who your real people are?"},
+// ── Week 9 — Practical Life ──────────────────────────────────
+{day:57,week:9,
+reading:"The practical infrastructure of your life — housing, finances, legal status, childcare arrangements — is the foundation everything else rests on. Whatever the state of it, getting clear on where you stand is better than carrying anxiety about the unknown.",
+journal:"Where are you practically right now? Housing, finances, legal status, childcare if relevant. Write the reality without catastrophising.",
+reflection:"What would it look like to have this area of your life sorted enough to stop draining your energy?",
+action:"Choose the most pressing practical matter and do one concrete thing to advance it today.",
+gratitude:"What practical matter has been resolved that you're relieved about?"},
+{day:58,week:9,
+reading:"Financial independence — or greater financial independence — is something many people rebuild after divorce. The relationship you have with money now is yours. Learning to manage it, plan with it, and not fear it is part of building the new life.",
+journal:"What is your relationship with money like right now? What do you wish it looked like?",
+reflection:"What is the most important financial thing to address in the next six months?",
+action:"Look at your finances today with clear eyes. Just look — not to solve, just to know where you stand.",
+gratitude:"What financial resource or security do you have right now that you're grateful for?"},
+{day:59,week:9,
+reading:"Housing is more than shelter. The space you live in shapes your sense of self, your mood, your capacity to recover. Whether you're in a new place, an old home with new echoes, or somewhere temporary — the quality of your domestic space matters. It's worth tending.",
+journal:"How is your home feeling right now? Is it a place that supports your recovery, or is it adding to the difficulty?",
+reflection:"What would it take to make your living space more genuinely supportive?",
+action:"Do one thing today to improve your living space — a small purchase, a reorganisation, a deep clean of one room.",
+gratitude:"What do you have in your home right now that gives you comfort?"},
+{day:60,week:9,milestone:true,
+reading:"Sixty days. Two months of showing up. You have survived the acute crisis, stabilised the basics, and begun rebuilding. You are not the person who arrived at day one. That person is still in you, but they have company now.",
+journal:"Day sixty. Write to yourself: what you've covered in two months, what you know now, what you're carrying differently, what you're building.",
+reflection:"What does the next thirty days need to focus on?",
+action:"Do something today that you couldn't have done, or wouldn't have thought to do, at day one. Something that reflects how you've changed.",
+gratitude:"Looking back across sixty days: what are you most grateful to have made it through, and most grateful to have gained?"},
+{day:61,week:9,
+reading:"Work and career can become a site of recovery or a site of avoidance. Some people throw themselves in and find it stabilising. Others find their performance has suffered. What matters is that the work you do is aligned with who you're becoming, not just who you were.",
+journal:"How has the divorce affected your work or career? Is work serving your recovery or getting in the way of it?",
+reflection:"Is your work aligned with what you value and where you want to go? Or is it just what you do?",
+action:"If you're underperforming: take one step to re-engage. If you're using work as avoidance: give yourself one evening off.",
+gratitude:"What does your work give you that genuinely matters?"},
+{day:62,week:9,
+reading:"The admin of divorce — paperwork, legal documents, financial accounts, name changes, beneficiary updates — is endless and grinding. Having it not-done is a constant low-level drain. It's worth keeping on top of, not because it has to be done perfectly, but because of that drain.",
+journal:"What administrative matters are still unresolved? How much energy are they taking from you?",
+reflection:"What would it feel like to have the administrative side fully handled?",
+action:"Complete one piece of divorce admin today. Just one. Tick it off.",
+gratitude:"What piece of admin or practical matter have you handled well?"},
+{day:63,week:9,
+reading:"Nine weeks. You've been rebuilding the practical life — finances, housing, work, the grinding admin. This is unglamorous recovery work, but it's the foundation. You can't rebuild identity and relationships on an unstable practical base.",
+journal:"Nine weeks in. How does the practical side of your life feel now compared to week one? What's improved?",
+reflection:"What one practical matter, if resolved, would free up the most energy?",
+action:"Write down the three most important practical matters still open. Prioritise them. Work on the top one.",
+gratitude:"What practical stability have you built in nine weeks that you're genuinely proud of?"},
+// ── Week 10 — Your Body, Your Energy ────────────────────────
+{day:64,week:10,
+reading:"Your body has been carrying this with you. Grief is physical — it sits in the chest, the throat, the shoulders. The physical holding of emotional pain is real, and it deserves attention. Movement, rest, and physical care are part of recovery.",
+journal:"Where do you carry stress physically? What does your body feel like right now, honestly?",
+reflection:"What does your body most need right now that it isn't getting?",
+action:"Do something specifically for your body today: a proper stretch, a run, a swim, a massage, time in the sun. Something physical and caring.",
+gratitude:"What is your body still doing well for you, despite everything?"},
+{day:65,week:10,
+reading:"Exercise has a direct and real effect on mood. This is not motivational noise. Physical movement, done consistently, is one of the most effective tools available for managing the emotional weight of what you're carrying. It deserves to be taken seriously.",
+journal:"What is your relationship with exercise or physical activity right now? Is it helping you?",
+reflection:"What kind of movement do you actually enjoy, rather than feel you should do?",
+action:"Choose one form of movement you enjoy and do it for at least 30 minutes today.",
+gratitude:"What physical capability or activity are you glad you have?"},
+{day:66,week:10,
+reading:"Eating well under stress is difficult. It requires planning and the willingness to care for yourself — both of which are in short supply. But the connection between what you eat and how you feel is strong. Food is medicine as much as pleasure.",
+journal:"How has your eating changed since the separation? What's improved, what's worsened, and what do you need?",
+reflection:"What would it look like to eat in a way that genuinely nourishes you?",
+action:"Cook or prepare one proper, nourishing meal for yourself today. Put effort into it. You're worth the effort.",
+gratitude:"What food or meal has given you genuine pleasure recently?"},
+{day:67,week:10,
+reading:"Mental load is a real and underappreciated thing. Running a household solo, managing children's schedules, keeping up with work — the total cognitive weight is heavier than when it was shared. It depletes decision-making capacity and emotional reserves. Recognising it is the first step.",
+journal:"What is your mental load like right now? What takes the most cognitive energy? What, if anything, is there to lighten it?",
+reflection:"What task, responsibility, or decision could you delegate, drop, or simplify?",
+action:"Identify one thing you're doing that could be done by someone else or not done at all. Remove or delegate it.",
+gratitude:"What are you managing well that you weren't sure you could?"},
+{day:68,week:10,
+reading:"Rest is not the same as sleep. Rest is the active withdrawal from demand — from performance, from doing, from thinking about what needs to be done next. In a life that has become more demanding, deliberate rest is a skill to develop.",
+journal:"What does rest actually look like for you — not sleep, but genuine rest? Are you getting enough of it?",
+reflection:"What would you need to let go of to rest more fully?",
+action:"Take one hour today with no agenda, no screens, and no productivity. Just rest.",
+gratitude:"What moment of genuine rest have you had recently?"},
+{day:69,week:10,
+reading:"The emotional regulation you've been practising — noticing feelings without being overwhelmed, staying present without dissociating — is a skill. It has been building without you necessarily seeing it. You are more emotionally resilient than you were at day one.",
+journal:"How has your emotional resilience changed in the last ten weeks? What can you handle now that felt impossible in week one?",
+reflection:"What emotion is still the hardest to be with? What do you do with it?",
+action:"Practise one emotional regulation technique today: box breathing, a body scan, writing about a feeling without trying to fix it.",
+gratitude:"What emotional skill have you built through this experience that you're grateful for?"},
+{day:70,week:10,
+reading:"Ten weeks. The body, the mind, the practical life — all being rebuilt, slowly and imperfectly. You are not who you were at day one. You carry more. You know more. You are, in the most concrete sense, more capable of living this life than when you started.",
+journal:"Ten weeks in. What do you have now — in terms of capability, resilience, understanding — that you didn't have at week one?",
+reflection:"What do you want the final three weeks to focus on?",
+action:"Write a letter to your day-one self. Tell them what you know now. Tell them what's coming. Tell them it's survivable.",
+gratitude:"What are you most grateful to have built in ten weeks?"},
+// ── Week 11 — The Longer View ────────────────────────────────
+{day:71,week:11,
+reading:"The longer view becomes available only after a certain amount of time. Too early, and you can't see it. Now, at eleven weeks, you can begin to hold both things: what has been lost and what is becoming possible. Both are true. Neither cancels the other.",
+journal:"What is beginning to feel possible that didn't feel possible at the start? What longer-arc hope is starting to appear?",
+reflection:"What would your life look like in three years if recovery continues at its current pace?",
+action:"Write down one thing you want to do or have or become that the marriage was not compatible with. Let yourself want it.",
+gratitude:"What is beginning to feel like a possibility that you'd like to cultivate?"},
+{day:72,week:11,
+reading:"Forgiveness — for your ex, for yourself, for the circumstances — is not required on a schedule. But at some point, carrying the full weight of it becomes more expensive than beginning to set it down. Not forgiveness as a moral statement. Forgiveness as a practical release of weight.",
+journal:"How are you with forgiveness right now — of your ex, of yourself? Has anything shifted?",
+reflection:"What would beginning to forgive look like for you — not the full thing, just a beginning?",
+action:"Write one sentence about your ex that is simply true, without judgment. Let it be the beginning of a more neutral story.",
+gratitude:"What have you been able to release in the last three months that you're grateful to have let go of?"},
+{day:73,week:11,
+reading:"The version of love you experienced in the marriage was real, even if the marriage ended. The capacity for love — yours — did not end with the marriage. It went into other things: your children, your friendships, your work. That capacity remains. It will find new forms.",
+journal:"Where does your capacity for love go right now — what or who receives it?",
+reflection:"What does love mean to you now, at this point in your life, compared to before?",
+action:"Do something loving for someone today — something that costs you something in time or attention.",
+gratitude:"Who in your life receives your love most readily right now?"},
+{day:74,week:11,
+reading:"You are building something. It may not have a name yet. It may not be fully visible. But the work of the last eleven weeks — the showing up, the honest reflection, the rebuilding — is not nothing. It is the architecture of a life. Your life. Built by you.",
+journal:"What are you building? Name it as clearly as you can — the life, the person, the relationships, the work.",
+reflection:"What would it mean for the thing you're building to be done?",
+action:"Write down the three most important elements of the life you're building. These are your priorities. Let them be.",
+gratitude:"What has the rebuilding process given you that wouldn't have come any other way?"},
+{day:75,week:11,
+reading:"Joy is not a betrayal of grief. Many people feel guilty when they experience happiness after divorce — as if feeling good means they're not taking the loss seriously. Joy and grief can exist at the same time. Neither cancels the other.",
+journal:"What brings you genuine joy right now? Not manufactured positivity — real, unguilty joy. Where does it show up?",
+reflection:"Do you feel guilty about feeling joy? Why?",
+action:"Do something joyful today without apologising for it. Let it be fully felt.",
+gratitude:"What brought you genuine pleasure in the last week?"},
+{day:76,week:11,
+reading:"The story of your life has not ended. Divorce is not an ending, even though it often feels like one. It is a rupture that becomes, over time, a chapter — not the last one, not necessarily the worst one, but one of the most important ones: the one that changed everything.",
+journal:"What chapter of your life are you in right now? What would you call it?",
+reflection:"What chapter comes next? What do you want to call it?",
+action:"Write the first line of the next chapter. Whatever feels true.",
+gratitude:"What does the story of your life contain that you're grateful for, even now?"},
+{day:77,week:11,
+reading:"Eleven weeks. You are in the home stretch. Not of the pain — that has its own timeline — but of the first phase of active recovery. You have done hard, sustained work for nearly three months. That is substantial. That has changed you.",
+journal:"Eleven weeks in. Write about what has changed in you from week one to now. Not what has been fixed — what has changed.",
+reflection:"What do you want the last two weeks of this track to bring you?",
+action:"Share something about your recovery with one person who doesn't know the full extent of it. Let someone see where you are.",
+gratitude:"What are you most grateful for about who you are now, eleven weeks in?"},
+// ── Week 12 — New Possibilities ──────────────────────────────
+{day:78,week:12,
+reading:"New possibilities are beginning to show themselves. Some may be practical — a new place, a new direction. Some may be relational. Some may be internal — a new understanding of yourself, a new capacity, a new way of being. Notice them. They're real.",
+journal:"What new possibilities are beginning to appear in your life? What are you starting to want that you couldn't have wanted before?",
+reflection:"What one possibility are you most excited about, even if it's still fragile?",
+action:"Take one concrete step toward one of these new possibilities today, however small.",
+gratitude:"What new possibility has this experience opened up that you're genuinely glad of?"},
+{day:79,week:12,
+reading:"The question of romantic relationships — whether and when to explore them — is one of the most loaded after divorce. There's no right timeline. What matters is that when you do return to intimacy, you do it from a place of genuine readiness, not from loneliness or urgency.",
+journal:"What is your relationship to the idea of future romantic relationships? Fear, hope, indifference, longing — or something more complicated?",
+reflection:"What would readiness for a new relationship look and feel like for you?",
+action:"There is no action for today — just a note: there is no rush. Whatever you feel about this is valid.",
+gratitude:"What has this period taught you about what you actually want from a relationship?"},
+{day:80,week:12,
+reading:"Purpose. What gets you out of bed in the morning — not just obligation, but genuine engagement with a reason to be? The dissolution of a marriage can remove or destabilise one source of purpose. The rebuilding of purpose is one of the most sustaining things recovery offers.",
+journal:"What gives you a sense of purpose right now? What gets you out of bed beyond obligation?",
+reflection:"What would a life with more purpose look like? What would you need to build or change?",
+action:"Identify one thing that gives you genuine purpose — however modest — and invest specifically in it today.",
+gratitude:"What sense of purpose has this experience either revealed or strengthened?"},
+{day:81,week:12,
+reading:"The people who've been through what you're going through are everywhere. Many of them are further along than you, and they carry something — perspective, hard-won calm — that is genuinely useful. Seek them out when you can.",
+journal:"Do you know anyone who has been through divorce and come out the other side in a way you admire? What do they carry that you want?",
+reflection:"What do you want people to see in you when you're further along?",
+action:"If you can: have a coffee with someone who has been through divorce. Ask them what they know now that they wish they'd known.",
+gratitude:"What has someone who's been through this given you — in words, presence, or example?"},
+{day:82,week:12,
+reading:"Creativity — making something, building something, expressing something — has a unique role in recovery. Not as therapy necessarily, but as a way of engaging with life that doesn't require things to be explained or resolved. The making of things, however small, is its own kind of survival.",
+journal:"What creative outlet do you have or have you had? Has it changed during this period? What does creating give you?",
+reflection:"If you had unlimited time and energy, what would you make or build?",
+action:"Do one creative thing today — cook something new, write something, draw, garden, rearrange, build. Something made by your hands.",
+gratitude:"What have you made or created during this period that you're glad exists?"},
+{day:83,week:12,
+reading:"The future is becoming visible again. Not fully — futures never are — but the blankness that characterised the early months is giving way to outlines. The things you want are reasserting themselves. You don't need to see the whole path. Just the next step.",
+journal:"What does your future look like right now? Not the full picture — the outlines that are beginning to emerge.",
+reflection:"What is the next step, specifically, that you need to take toward the future you want?",
+action:"Take that step today, or plan when you will.",
+gratitude:"What about your future are you beginning to feel genuinely hopeful about?"},
+{day:84,week:12,
+reading:"Twelve weeks. Three months. You have been showing up, every day, for three months. The person at day one didn't know they could do this. Now you know. That knowledge — that you can survive difficulty and rebuild from it — doesn't go away. It's yours.",
+journal:"Three months in. What do you know about yourself now that you didn't know at day one?",
+reflection:"What is the most important thing you've learned?",
+action:"Write a letter to someone who is about to go through what you've been through. Tell them what you know. Tell them what helped. Tell them what to hold onto.",
+gratitude:"What are you most grateful for, looking back at three months?"},
+// ── Week 13 — The Person You're Becoming ────────────────────
+{day:85,week:13,
+reading:"You are in the last week. Not the last week of recovery — that takes longer. The last week of this track. The work you've done here is the foundation. The building continues. But you've laid the ground, and it's solid.",
+journal:"What has this track given you? What has shifted, settled, or grown in thirteen weeks?",
+reflection:"What from this track do you want to carry forward? What practice, insight, or orientation?",
+action:"Choose one practice from the last thirteen weeks that you commit to continuing. Just one.",
+gratitude:"What has the structure of this track given you that you're grateful for?"},
+{day:86,week:13,
+reading:"The person you're becoming is not the person you were before the marriage, and not the person you were in the marriage. They're someone new — shaped by all of it, but not defined by any single part of it. You are the author of what comes next.",
+journal:"Describe the person you're becoming. Not aspirationally — observationally. Who is actually emerging?",
+reflection:"What aspect of the emerging you are you most proud of?",
+action:"Do one thing today that the person you're becoming would do — something that's an expression of who you're growing into.",
+gratitude:"What are you grateful to be becoming?"},
+{day:87,week:13,
+reading:"Growth through difficulty is real, but it isn't guaranteed. It happens because someone does the work — the honest reflection, the showing up, the willingness to be changed rather than only damaged. You have done that work. What you have now, you earned.",
+journal:"What growth has happened in you because of what you've been through — not despite it, but because of it?",
+reflection:"What would you say to someone who argued that nothing good could come from divorce?",
+action:"Acknowledge the growth. Write it down explicitly. Don't be modest. This matters.",
+gratitude:"What has grown in you that you're genuinely, deeply grateful for?"},
+{day:88,week:13,
+reading:"Resilience is not the absence of being broken. It's the willingness and capacity to be broken and to rebuild. You have been broken. You have rebuilt. You will be broken again, differently. And you will rebuild again, because you now know you can.",
+journal:"What does resilience mean to you now, having lived through this? How has your understanding of it changed?",
+reflection:"What made you resilient — what resources, people, or practices carried you through?",
+action:"Write down the specific things that helped most in this period. Keep that list. It's your resilience map.",
+gratitude:"What are you most grateful for about your own resilience?"},
+{day:89,week:13,
+reading:"The relationships you are bringing into the next phase of your life have been tested and clarified. The people who stayed, the new connections made, the relationships you've built more honestly — these are the result of hard selection. They are the foundation of the life ahead.",
+journal:"Who are the people you're bringing into the next chapter? What do they mean to you?",
+reflection:"What do you want to give the people you love in this next phase?",
+action:"Tell someone you love what they've meant to you through this. Not just a thank you — something specific.",
+gratitude:"Who are you most grateful to be carrying forward?"},
+{day:90,week:13,
+reading:"Ninety days. You are one day from the end of this track. What you've done in ninety days is not a small thing — it is the work of completely rebuilding the foundations of a life. That's real work. Demanding, honest, courageous work. And you've done it.",
+journal:"Day ninety. Write about the distance you've covered — not from the divorce, but in yourself. Who were you at day one? Who are you now?",
+reflection:"What do you want the next ninety days to look like?",
+action:"Do one thing today that is a full expression of who you've become. Something that day-one you couldn't have done.",
+gratitude:"What are you most grateful for about the last ninety days?"},
+{day:91,week:13,milestone:true,
+reading:"You made it. Not to the end of grief — grief has its own schedule. Not to the end of difficulty — life doesn't work that way. But to the end of this. Ninety-one days of showing up. Every one of those days, you chose to engage rather than turn away. That is the whole of recovery. That choice, made again and again. You are not the person who arrived here. You are the person who built themselves, one day at a time, into someone capable of what comes next.",
+journal:"Day ninety-one. Write the whole story: where you started, what you've survived, what you've built, who you've become. Write it as a letter to yourself. Keep it.",
+reflection:"What is the one thing you most want to carry from this track into the rest of your life?",
+action:"Mark this day. Share it with someone who matters. You don't have to explain what it means — just say: I finished something hard today.",
+gratitude:"What are you most grateful for — about this track, about yourself, about the life you're building?"},
+];
+const getRecoveryDay = (n) => RECOVERY_DAYS.find(d => d.day === n) || RECOVERY_DAYS[0];
+const getRecoveryWeek = (n) => RECOVERY_WEEKS.find(w => w.week === n) || RECOVERY_WEEKS[0];
+
 // ── Faith module lookup helpers ────────────────────────────────
 const getFaithModule = (num) => FAITH_MODULES.find(m => m.num === num) || FAITH_MODULES[0];
 const faithPhases = [
@@ -705,14 +1350,62 @@ const faithPhases = [
   { num:4, title:'Rebuilding', modules:[11,12] },
 ];
 
-// ── Anthropic ──────────────────────────────────────────────────
+
+// ── Recovery companion system prompt ──────────────────────────
+const SYS_RECOVERY_COMPANION = () => {
+  const dayNum = Math.min(S.recovery.daysCompleted.length + 1, 91);
+  const wkNum = Math.min(Math.ceil(dayNum/7),13);
+  const wk = getRecoveryWeek(wkNum);
+  const todayData = getRecoveryDay(dayNum);
+  const recentJournals = S.recovery.jEntries.slice(0,6).map(e=>
+    `[Day ${e.day_num} · ${e.entry_type}]: ${e.content}`
+  ).join('\n\n');
+
+  return `You are the Beside companion supporting ${S.userName} within the 90-Day Recovery Track of the Beside app — a post-divorce emotional support tool for the South African market.
+
+ABOUT THIS USER:
+- Name: ${S.userName}
+- Divorce stage: ${S.userStage}
+- Priorities: ${S.userPriorities.join(', ')}
+- Days completed: ${S.recovery.daysCompleted.length} of 91
+- Current position: Day ${dayNum}, Week ${wkNum} — ${wk.phase} phase ("${wk.title}")
+
+TODAY'S TRACK CONTENT (Day ${dayNum}):
+Reading: ${todayData.reading}
+Reflection question: ${todayData.reflection}
+Action: ${todayData.action}
+
+${recentJournals ? `RECENT JOURNAL ENTRIES (most recent first):\n${recentJournals}` : 'No journal entries yet.'}
+
+YOUR ROLE:
+- You are warm, unhurried, and present. You know where this person is in their recovery.
+- Reference the track content and journal entries naturally — never quote them back clinically.
+- Acknowledge before advising. Reflect before questioning.
+- Ask ONE precise question per response. Keep responses to 2–4 sentences.
+- Never give clinical advice, hollow reassurances, or diagnostic language.
+- If the user shows signs of acute distress, provide SADAG crisis line: 0800 456 789 (free, 24/7).`;
+};
+
+const SYS_COMPANION = () => {
+  const dayNum = Math.min(S.recovery.daysCompleted.length + 1, 91);
+  const wkNum = Math.min(Math.ceil(dayNum/7),13);
+  const wk = getRecoveryWeek(wkNum);
+  const inRecovery = S.recovery.daysCompleted.length > 0;
+  const recoveryCtx = inRecovery
+    ? `\nRecovery track: Day ${dayNum} of 91 — ${wk.phase} phase, "${wk.title}". Be aware of where they are in this journey.`
+    : '';
+  return `You are the Beside companion — warm, unhurried, supporting ${S.userName} through life after divorce.
+Situation: ${S.userStage}. Priorities: ${S.userPriorities.join(', ')}.${recoveryCtx}
+Listen, reflect, ask ONE precise question per response. Acknowledge pain without amplifying or minimising.
+Never give clinical advice, hollow reassurances, or ask more than one question. Keep responses to 2-4 sentences.`;
+};
 async function ai(messages, system) {
   // Calls Supabase Edge Function proxy to avoid CORS restrictions
   const proxyUrl = S.sbUrl + '/functions/v1/companion';
   const r = await fetch(proxyUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + S.sbKey },
-    body: JSON.stringify({ messages, system, apiKey: S.anKey })
+    body: JSON.stringify({ messages, system })
   });
   if (!r.ok) {
     let msg = 'Proxy error';
@@ -723,12 +1416,6 @@ async function ai(messages, system) {
   if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
   return data.content[0].text;
 }
-
-const SYS_COMPANION = () =>
-  `You are the Beside companion — warm, unhurried, supporting ${S.userName} through life after divorce.
-Situation: ${S.userStage}. Priorities: ${S.userPriorities.join(', ')}.
-Listen, reflect, ask ONE precise question per response. Acknowledge pain without amplifying or minimising.
-Never give clinical advice, hollow reassurances, or ask more than one question. Keep responses to 2-4 sentences.`;
 
 const SYS_JOURNAL_REFLECT = (prompt, entry) =>
   `You are the Beside companion responding to a journal entry written by ${S.userName}.
@@ -749,18 +1436,61 @@ This opens a conversation. They may reply and keep going.`;
 const SYS_JOURNAL = () =>
   `Write one journal prompt for ${S.userName} (${S.userStage} after divorce). One sentence, second person, emotionally honest, self-discovery focused. Start with What/When/Describe/Write about. Return only the prompt.`;
 
+const SYS_HOME_GREETING = () => {
+  const hr = new Date().getHours();
+  const tod = hr<12?'morning':hr<17?'afternoon':'evening';
+  const d = S.dayCount||1;
+  const dayNum = Math.min(S.recovery.daysCompleted.length+1,91);
+  const wk = getRecoveryWeek(Math.min(Math.ceil(dayNum/7),13));
+  const moodCtx = S.todayMood ? `Their mood today: ${S.todayMood}.` : '';
+  return `You are the Beside companion — warm, unhurried, present.
+Write a single short greeting for ${S.userName} to appear on their home screen this ${tod}. It is Day ${d} of their journey. They are in the ${wk.phase} phase of recovery. ${moodCtx}
+The greeting should:
+- Feel personal and genuinely noticing — not generic
+- Be 1–2 sentences only, no more
+- End with a single open question that gently invites them to talk — something specific to where they are, not generic ("how are you?")
+- Be warm but not saccharine — honest, steady, present
+- NOT start with "Hi" or their name — just begin
+Return only the greeting text. No quotes, no labels.`;
+};
+
 // ── Render ─────────────────────────────────────────────────────
 function R() {
   const root = document.getElementById('root');
   root.innerHTML = '';
   const shell = document.createElement('div');
   shell.className = 'app-shell';
-  const screens = { setup:rSetup, auth:rAuth, onboarding:rOnboarding, home:rHome, companion:rCompanion, journal:rJournal, profile:rProfile, tracks:rTracks, faithOb:rFaithOb, faithHome:rFaithHome, faithModule:rFaithModule, faithJournal:rFaithJournal, faithCompanion:rFaithCompanion, faithDeepDive:rFaithDeepDive, faithSettings:rFaithSettings };
+  const screens = { splash:rSplash, setup:rSetup, auth:rAuth, onboarding:rOnboarding, home:rHome, companion:rCompanion, journal:rJournal, profile:rProfile, tracks:rTracks, faithOb:rFaithOb, faithHome:rFaithHome, faithModule:rFaithModule, faithJournal:rFaithJournal, faithCompanion:rFaithCompanion, faithDeepDive:rFaithDeepDive, faithSettings:rFaithSettings, recoveryHome:rRecoveryHome, recoveryDay:rRecoveryDay, recoveryCompanion:rRecoveryCompanion };
   shell.appendChild((screens[S.screen]||rHome)());
-  if (['home','companion','journal','profile','tracks','faithHome','faithJournal','faithCompanion','faithSettings'].includes(S.screen)) shell.appendChild(rNav());
+  if (['home','companion','journal','profile','tracks','faithHome','faithJournal','faithCompanion','faithSettings','recoveryHome','recoveryCompanion'].includes(S.screen)) shell.appendChild(rNav());
   root.appendChild(shell);
 }
 const render = R;
+
+// ── SPLASH ─────────────────────────────────────────────────────
+function rSplash() {
+  const w = el('div','screen dark-bg');
+  w.innerHTML=`
+    <div style="flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:40px 32px;text-align:center">
+      <div style="font-family:var(--serif);font-size:48px;color:var(--linen);letter-spacing:0.12em;margin-bottom:20px">beside</div>
+      <div style="width:32px;height:0.5px;background:var(--terra);margin:0 auto 28px"></div>
+      <div style="font-family:var(--serif);font-size:18px;color:var(--linen);line-height:1.75;font-style:italic;max-width:280px;margin-bottom:12px">
+        A private space to process life after divorce — with a companion that listens, remembers, and stays beside you.
+      </div>
+      <div style="font-size:12px;color:var(--dusk);line-height:1.65;max-width:260px;margin-bottom:48px">
+        Everything you share here is private and belongs to you.
+      </div>
+    </div>
+    <div style="padding:0 28px 52px;display:flex;flex-direction:column;gap:12px">
+      <button id="enter-btn" class="btn btn-primary-dark" style="font-size:16px;padding:17px;letter-spacing:0.06em">Enter</button>
+      <div style="text-align:center;font-size:11px;color:var(--dark3)">You won\'t see this screen again</div>
+    </div>`;
+  on(w,'#enter-btn','click',async()=>{
+    LS.set('splashSeen','1');
+    await connectAndLoad();
+  });
+  return w;
+}
 
 // ── SETUP ──────────────────────────────────────────────────────
 function rSetup() {
@@ -819,7 +1549,7 @@ function rAuth() {
   const isUp = S.authMode==='signup';
   const w = el('div','screen dark-bg');
   w.innerHTML = `
-    <div class="status-bar status-dark"><span>9:41</span><span id="settings-link" style="cursor:pointer;font-size:16px;padding:2px 4px" title="Connection settings">⚙</span></div>
+    <div class="status-bar status-dark"><span>9:41</span><span></span></div>
     <div style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:28px 24px">
       <div style="font-family:var(--serif);font-size:38px;color:var(--linen);letter-spacing:0.1em;text-align:center;margin-bottom:4px">beside</div>
       <div class="t-label t-muted" style="text-align:center;margin-bottom:28px">your private space</div>
@@ -851,12 +1581,8 @@ function rAuth() {
         </div>
       `}
     </div>
-    <div style="padding:0 24px 20px;text-align:center">
-      <button id="chg-conn" class="lnk">Change connection settings</button>
     </div>`;
 
-  on(w,'#chg-conn','click',()=>{S.screen='setup';S.err='';R();});
-  on(w,'#settings-link','click',()=>{S.screen='setup';S.err='';R();});
   if(S.verifyPending){on(w,'#back-si','click',()=>{S.verifyPending=false;S.authMode='signin';S.err='';R();});return w;}
   on(w,'#tog-si','click',()=>{S.authMode='signin';S.err='';R();});
   on(w,'#tog-su','click',()=>{S.authMode='signup';S.err='';R();});
@@ -921,7 +1647,11 @@ async function handleSession(session, overrideName) {
         S.faith.modulesCompleted=fp.modules_completed||[]; S.faith.hasChildren=fp.has_children??null; S.isChristian=true;
       }
       S.faith.jEntries=await loadFaithJournals();
-      await loadHomeData(); S.screen='home';
+      const rp=await loadRecoveryProgress();
+      if(rp) S.recovery.daysCompleted=rp.days_completed||[];
+      S.convs=await loadConvs();
+      await loadHomeData();
+      S.screen='home';
     }
   }catch(e){ S.err='Could not load profile: '+e.message; S.screen='auth'; }
 }
@@ -1015,7 +1745,9 @@ function rOnboarding() {
           if(!fp){ S.faith.enrolled=false; } // will prompt via tracks tab
           else { S.faith.enrolled=true; S.faith.modulesCompleted=fp.modules_completed||[]; }
         }
-        await loadHomeData(); S.screen='home';
+        await loadHomeData();
+        S.convs=await loadConvs();
+        S.screen='home';
       }catch(e){S.err=e.message;}
       S.loading=false;R();
     });
@@ -1023,90 +1755,131 @@ function rOnboarding() {
   return w;
 }
 
-// ── HOME ───────────────────────────────────────────────────────
+// ── HOME (DASHBOARD) ───────────────────────────────────────────
 async function loadHomeData() {
   if(!S.userId)return;
   S.todayMood=await loadTodayMood();
   S.journalEntries=await loadJournals();
+  // Generate greeting async — renders loading state first, then re-renders with content
+  if(!S.homeGreeting){
+    S.homeGreetingLoading=true;
+    ai([{role:'user',content:'greeting'}],SYS_HOME_GREETING())
+      .then(g=>{ S.homeGreeting=g; S.homeGreetingLoading=false; R(); })
+      .catch(()=>{ S.homeGreeting=''; S.homeGreetingLoading=false; R(); });
+  }
 }
 
 function rHome() {
   const w = el('div','screen linen-bg');
-  const d=S.dayCount||1, jc=S.journalEntries.length, pct=Math.min(Math.round(d/90*100),100);
+  const d=S.dayCount||1, jc=S.journalEntries.length;
   const hr=new Date().getHours(), tod=hr<12?'morning':hr<17?'afternoon':'evening';
+  const rDone=S.recovery.daysCompleted.length;
+  const rpct=Math.min(Math.round((rDone/91)*100),100);
+  const rCurrentDay=Math.min(rDone+1,91);
+  const rWk=getRecoveryWeek(Math.min(Math.ceil(rCurrentDay/7),13));
+  const moods=[['😔','Low'],['😐','Okay'],['🌱','Better'],['☀️','Good']];
+
+  const greetingContent = S.homeGreetingLoading
+    ? `<div style="display:flex;gap:5px;align-items:center;padding:4px 0">
+        <div style="width:5px;height:5px;border-radius:50%;background:var(--terra);opacity:0.4;animation:pulse 1.2s ease-in-out infinite"></div>
+        <div style="width:5px;height:5px;border-radius:50%;background:var(--terra);opacity:0.4;animation:pulse 1.2s ease-in-out infinite;animation-delay:0.2s"></div>
+        <div style="width:5px;height:5px;border-radius:50%;background:var(--terra);opacity:0.4;animation:pulse 1.2s ease-in-out infinite;animation-delay:0.4s"></div>
+      </div>`
+    : S.homeGreeting
+      ? `<div style="font-family:var(--serif);font-size:18px;color:var(--linen);line-height:1.75;font-style:italic">${S.homeGreeting}</div>`
+      : `<div style="font-family:var(--serif);font-size:18px;color:var(--linen);line-height:1.75;font-style:italic">Good ${tod}, ${S.userName}. This space is just for you — whenever you\'re ready.</div>`;
+
   w.innerHTML=`
-    <div class="status-bar status-dark"><span style="color:var(--dusk);font-size:11px">9:41</span><span style="color:var(--dusk);font-size:11px">●●●</span></div>
-    <div style="background:var(--dark);padding:10px 22px 20px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-        <div style="font-family:var(--serif);font-size:18px;color:var(--linen);letter-spacing:0.08em">beside</div>
-        <div id="av" style="width:32px;height:32px;border-radius:50%;background:var(--dark2);border:0.5px solid var(--terra);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;color:var(--terra);cursor:pointer">${S.userName.charAt(0).toUpperCase()}</div>
+    <div style="background:var(--dark);padding:14px 18px 0;flex-shrink:0">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div style="font-family:var(--serif);font-size:19px;color:var(--linen);letter-spacing:0.08em">beside</div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div class="pill"><div class="pill-dot"></div><div class="t-label" style="color:var(--dusk);font-size:9px">DAY ${d} · ${new Date().toLocaleDateString('en-ZA',{weekday:'long'}).toUpperCase()}</div></div>
+          <div id="av" style="width:30px;height:30px;border-radius:50%;background:var(--dark2);border:0.5px solid var(--terra);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;color:var(--terra);cursor:pointer">${S.userName.charAt(0).toUpperCase()}</div>
+        </div>
       </div>
-      <div class="pill" style="margin-bottom:12px"><div class="pill-dot"></div><div class="t-label" style="color:var(--dusk);font-size:9px">DAY ${d} · ${new Date().toLocaleDateString('en-ZA',{weekday:'long'}).toUpperCase()}</div></div>
-      <div class="t-hero t-light" style="margin-bottom:5px">Good ${tod},<br>${S.userName}.</div>
-      <div class="t-body t-muted">${d>1?`You've shown up ${d} days in a row.<br>That matters more than you know.`:`Welcome. This space is entirely yours.`}</div>
+
+      <div id="greeting-card" style="cursor:pointer;padding:16px;background:var(--dark2);border-radius:var(--r-lg) var(--r-lg) 0 0;border:0.5px solid var(--dark3);border-bottom:none;position:relative">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <div class="av-dot"><div class="av-inner"></div></div>
+          <div style="font-size:10px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;color:var(--dusk)">Your companion</div>
+        </div>
+        ${greetingContent}
+        <div style="margin-top:14px;background:var(--dark);border-radius:20px;padding:9px 16px;font-size:12px;color:var(--dark3);font-style:italic;border:0.5px solid var(--dark3)">Reply to your companion…</div>
+      </div>
+
+      <div style="padding:10px 0 14px;display:flex;gap:5px">
+        ${moods.map(([e,l])=>`<button class="mood-btn ${S.todayMood===l?'active':''}" data-m="${l}" style="flex:1;font-size:11px;padding:7px 2px;border-radius:8px"><span class="mood-e" style="font-size:14px">${e}</span>${l}</button>`).join('')}
+      </div>
     </div>
-    <div class="scroll-content" style="padding:14px 14px 0;display:flex;flex-direction:column;gap:10px">
-      <div class="card" id="cc" style="cursor:pointer"><div class="card-pad">
-        <div class="t-label t-muted" style="margin-bottom:8px">Your companion</div>
-        <div style="font-family:var(--serif);font-size:14px;color:var(--text);line-height:1.7;font-style:italic;margin-bottom:12px">"${cpPrompt()}"</div>
-        <div style="background:var(--linen);border:0.5px solid var(--stone);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--stone);font-style:italic">Reply to your companion…</div>
-      </div></div>
-      <div class="card"><div class="card-pad">
-        <div class="t-label t-muted" style="margin-bottom:10px">How are you feeling right now?</div>
-        <div class="mood-row">
-          ${[['😔','Low'],['😐','Okay'],['🌱','Better'],['☀️','Good']].map(([e,l])=>`<button class="mood-btn ${S.todayMood===l?'active':''}" data-m="${l}"><span class="mood-e">${e}</span>${l}</button>`).join('')}
-        </div>
-      </div></div>
-      <div class="card"><div class="card-pad">
+
+    <div class="scroll-content" style="padding:12px 14px 24px;display:flex;flex-direction:column;gap:10px">
+
+      <div id="rec-card" style="background:#fff;border:1px solid var(--blue-border);border-radius:var(--r-lg);padding:14px;cursor:pointer">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <div class="t-title">90-day recovery track</div>
-          <div class="t-label t-muted">Day ${d} of 90</div>
+          <div style="font-size:11px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;color:var(--blue)">${rWk.phase} · Week ${Math.min(Math.ceil(rCurrentDay/7),13)}</div>
+          <div style="font-size:11px;color:var(--dusk)">Day ${rCurrentDay} of 91</div>
         </div>
-        <div class="prog-bar" style="margin-bottom:10px"><div class="prog-fill" style="width:${pct}%"></div></div>
-        <div id="trk" style="background:var(--linen);border-radius:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;border:0.5px solid var(--stone)">
-          <div><div class="t-label t-muted" style="margin-bottom:2px">${wkTheme(d)}</div><div class="t-title">${wkEx(d)}</div></div>
-          <div style="color:var(--stone);font-size:18px">›</div>
-        </div>
-      </div></div>
+        <div class="rec-progress" style="margin-bottom:6px"><div class="rec-progress-fill" style="width:${rpct}%"></div></div>
+        <div style="font-size:13px;font-weight:500;color:var(--text)">${rWk.title} →</div>
+      </div>
+
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <div class="card" id="jc-btn" style="padding:14px;cursor:pointer">
-          <div class="t-label t-muted" style="margin-bottom:6px">Journal</div>
-          <div style="font-family:var(--serif);font-size:26px;color:var(--text);margin-bottom:2px">${jc}</div>
-          <div class="t-body t-muted" style="font-size:11px">${jc===1?'entry written':'entries'} ${jc>0?'— keep going.':'— start today.'}</div>
+        <div class="card" id="jc-btn" style="padding:13px;cursor:pointer">
+          <div class="t-label t-muted" style="margin-bottom:5px">Journal</div>
+          <div style="font-family:var(--serif);font-size:24px;color:var(--text);margin-bottom:1px">${jc}</div>
+          <div style="font-size:11px;color:var(--dusk)">${jc===1?'entry':'entries'} ${jc>0?'written':'— start today'}</div>
         </div>
-        <div class="card-dark" style="padding:14px;border-radius:var(--r-lg)">
-          <div class="t-label" style="color:var(--dusk);margin-bottom:6px">Next milestone</div>
-          <div style="font-family:var(--serif);font-size:13px;color:var(--linen);margin-bottom:4px;line-height:1.4">${milestone(d)}</div>
+        <div class="card-dark" style="padding:13px;border-radius:var(--r-lg)">
+          <div class="t-label" style="color:var(--dusk);margin-bottom:5px">Next milestone</div>
+          <div style="font-family:var(--serif);font-size:12px;color:var(--linen);margin-bottom:3px;line-height:1.4">${milestone(d)}</div>
           <div class="t-label t-muted">${mDays(d)} days away</div>
         </div>
       </div>
+
       ${S.isChristian===true&&!S.faith.enrolled?`
-      <div id="faith-nudge" style="background:var(--amber-light);border:1.5px solid var(--amber-border);border-radius:var(--r-lg);padding:14px;cursor:pointer">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-          <div style="width:28px;height:28px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="13" height="13" viewBox="0 0 13 13" fill="none"><line x1="6.5" y1="1" x2="6.5" y2="12" stroke="white" stroke-width="1.8" stroke-linecap="round"/><line x1="1" y1="4.5" x2="12" y2="4.5" stroke="white" stroke-width="1.8" stroke-linecap="round"/></svg></div>
-          <div style="font-size:13px;font-weight:500;color:var(--amber-dark)">Faith & Divorce track</div>
+      <div id="faith-nudge" style="background:var(--amber-light);border:1px solid var(--amber-border);border-radius:var(--r-lg);padding:13px;cursor:pointer">
+        <div style="display:flex;align-items:center;gap:9px;margin-bottom:6px">
+          <div style="width:24px;height:24px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="11" height="11" viewBox="0 0 11 11" fill="none"><line x1="5.5" y1="1" x2="5.5" y2="10" stroke="white" stroke-width="1.6" stroke-linecap="round"/><line x1="1" y1="4" x2="10" y2="4" stroke="white" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+          <div style="font-size:13px;font-weight:500;color:var(--amber-dark)">Faith &amp; Divorce track</div>
         </div>
-        <div style="font-size:13px;color:var(--amber-dark);line-height:1.6;margin-bottom:10px">There's a track built specifically for Christians going through divorce. 12 modules covering theology, grief, identity, and your faith community.</div>
-        <div style="font-size:12px;font-weight:500;color:var(--amber)">Start the track →</div>
+        <div style="font-size:12px;color:var(--amber-dark);line-height:1.6">12 modules for Christians going through divorce — theology, grief, identity, community.</div>
+        <div style="font-size:11px;font-weight:500;color:var(--amber);margin-top:6px">Start the track →</div>
       </div>`:``}
-      <div class="card-dark"><div class="card-pad">
-        <div class="t-label" style="color:var(--dusk);margin-bottom:10px">From your community</div>
-        <div style="background:var(--dark2);border-radius:10px;padding:12px 14px">
-          <div class="t-label" style="color:var(--dark3);margin-bottom:5px">3–6 MONTHS · SHARED EXPERIENCE</div>
-          <div style="font-family:var(--serif);font-size:13px;color:#C4B4AA;line-height:1.6;font-style:italic">"The first time I cooked dinner for just me and the kids I cried. Then it became my favourite part of the week. It gets different."</div>
-        </div>
+
+      <div class="card-dark" style="border-radius:var(--r-lg)"><div class="card-pad">
+        <div class="t-label" style="color:var(--dark3);margin-bottom:8px">From your community</div>
+        <div style="font-family:var(--serif);font-size:13px;color:#C4B4AA;line-height:1.6;font-style:italic">"The first time I cooked dinner for just me and the kids I cried. Then it became my favourite part of the week. It gets different."</div>
+        <div class="t-label" style="color:var(--dark3);margin-top:6px">3–6 months · shared experience</div>
       </div></div>
-      <div style="height:10px"></div>
+
+      <div style="height:8px"></div>
     </div>`;
-  on(w,'#cc','click',()=>{S.screen='companion';loadConvs().then(convs=>{S.convs=convs;if(!convs.length){const op=`Hi ${S.userName}. I'm glad you're here. No agenda today — just us, and whatever you want to bring. How are you feeling right now, honestly?`;saveMsg('assistant',op);S.convs=[{role:'assistant',content:op}];}R();});});
+
+  on(w,'#greeting-card','click',async()=>{
+    if(!S.convs.length){ S.convs=await loadConvs(); }
+    if(!S.convs.length){
+      // Seed conversation with greeting as first companion message
+      const seed = S.homeGreeting || `Good ${tod}, ${S.userName}. This space is just for you.`;
+      await saveMsg('assistant',seed);
+      S.convs=[{role:'assistant',content:seed}];
+    }
+    S.screen='companion'; R();
+  });
+  on(w,'#rec-card','click',()=>{ S.screen='recoveryHome'; R(); });
+  on(w,'#jc-btn','click',()=>{ S.screen='journal'; loadJData().then(R); });
   on(w,'#faith-nudge','click',()=>{ S.faith.obStep=1; S.screen='faithOb'; R(); });
-  on(w,'#jc-btn','click',()=>{S.screen='journal';loadJData().then(R);});
-  on(w,'#trk','click',()=>{S.screen='journal';loadJData().then(R);});
-  on(w,'#av','click',()=>{S.screen='profile';R();});
+  on(w,'#av','click',()=>{ S.screen='profile'; R(); });
   w.querySelectorAll('[data-m]').forEach(b=>b.addEventListener('click',async()=>{
     const m=b.dataset.m; S.todayMood=m;
     w.querySelectorAll('[data-m]').forEach(x=>x.classList.remove('active'));
     b.classList.add('active'); await saveMood(m);
+    // Refresh greeting to incorporate mood
+    S.homeGreeting='';
+    S.homeGreetingLoading=true; R();
+    ai([{role:'user',content:'greeting'}],SYS_HOME_GREETING())
+      .then(g=>{ S.homeGreeting=g; S.homeGreetingLoading=false; R(); })
+      .catch(()=>{ S.homeGreetingLoading=false; R(); });
   }));
   return w;
 }
@@ -1121,17 +1894,15 @@ function rCompanion() {
   ).join('');
   const typ = S.isTyping?`<div class="bubble-row fade-in"><div class="av-dot"><div class="av-inner"></div></div><div class="typing-wrap"><div class="td"></div><div class="td"></div><div class="td"></div></div></div>`:'';
   w.innerHTML=`
-    <div class="status-bar status-dark"><span>9:41</span><span>●●●</span></div>
     <div style="padding:10px 16px 12px;display:flex;align-items:center;gap:10px;border-bottom:0.5px solid var(--dark2);background:var(--dark);flex-shrink:0">
       <div id="bk" style="color:var(--dusk);font-size:20px;cursor:pointer;padding:2px 6px;line-height:1">‹</div>
-      <div class="av-dot"></div>
+      <div class="av-dot"><div class="av-inner"></div></div>
       <div style="flex:1">
         <div style="font-size:13px;font-weight:500;color:var(--linen)">Your companion</div>
         <div class="t-label t-muted" style="font-size:9px">beside you · day ${S.dayCount}</div>
       </div>
     </div>
     <div id="thread" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px">
-      <div class="t-label" style="text-align:center;color:var(--dark3)">Today</div>
       ${msgs}${typ}
     </div>
     <div style="padding:8px 12px 16px;border-top:0.5px solid var(--dark2);background:var(--dark);flex-shrink:0">
@@ -1144,19 +1915,19 @@ function rCompanion() {
     </div>`;
   setTimeout(()=>{
     const thread=w.querySelector('#thread'); thread.scrollTop=thread.scrollHeight;
-    on(w,'#bk','click',()=>{S.screen='home';R();});
+    on(w,'#bk','click',()=>{ S.screen='home'; R(); });
     const inp=w.querySelector('#mi');
     const send=async()=>{
       const t=inp.value.trim(); if(!t||S.isTyping)return;
       inp.value=''; inp.style.height='auto';
       S.convs.push({role:'user',content:t}); await saveMsg('user',t);
       const faithKws=['God','church','faith','sin','pray','prayer','Scripture','pastor','Christian','spiritual','Lord','Jesus','covenant'];
-      if(faithKws.some(w=>t.toLowerCase().includes(w.toLowerCase()))&&S.isChristian===true&&!S.faith.enrolled) S._faithSuggested=true;
+      if(faithKws.some(kw=>t.toLowerCase().includes(kw.toLowerCase()))&&S.isChristian===true&&!S.faith.enrolled) S._faithSuggested=true;
       S.isTyping=true; R();
       try{
         const reply=await ai(S.convs.map(m=>({role:m.role,content:m.content})),SYS_COMPANION());
         S.convs.push({role:'assistant',content:reply}); await saveMsg('assistant',reply);
-      }catch(e){S.convs.push({role:'assistant',content:"I'm having trouble connecting right now (" + (e.message||'unknown error') + "). Please check your Anthropic API key and try again."});}
+      }catch(e){S.convs.push({role:'assistant',content:"I\'m having trouble connecting right now ("+(e.message||'unknown error')+"). Please check your Anthropic API key and try again."});}
       S.isTyping=false; R();
     };
     on(w,'#sb-btn','click',send);
@@ -1196,7 +1967,7 @@ function rJournalWrite(w) {
       <div class="card">
         <div style="background:var(--dark);padding:12px 16px;border-radius:var(--r-lg) var(--r-lg) 0 0">
           <div class="t-label" style="color:var(--dusk);margin-bottom:6px">Today's prompt</div>
-          <div style="font-family:var(--serif);font-size:14px;color:var(--linen);line-height:1.7;font-style:italic">${S.jLoading?'Finding a prompt for you…':S.jPrompt}</div>
+          <div style="font-family:var(--serif);font-size:18px;color:var(--linen);line-height:1.7;font-style:italic">${S.jLoading?'Finding a prompt for you…':S.jPrompt}</div>
         </div>
         <div style="padding:12px 16px">
           <textarea id="ji" class="j-textarea" placeholder="Write here — this is only for you…">${S.jText}</textarea>
@@ -1392,54 +2163,69 @@ function rTracks() {
   const enrolled = S.faith.enrolled;
   const done = S.faith.modulesCompleted.length;
   const total = 12;
-  const pct = Math.round((done/total)*100);
+  const fpct = Math.round((done/total)*100);
+  const rDone = S.recovery.daysCompleted.length;
+  const rpct = Math.min(Math.round((rDone/91)*100),100);
+  const rCurrentDay = Math.min(rDone+1,91);
 
   w.innerHTML=`
     <div class="status-bar status-light"><span>9:41</span><span>●●●</span></div>
     <div style="padding:10px 20px 14px;border-bottom:0.5px solid var(--stone);flex-shrink:0">
-      <div class="t-label t-muted" style="margin-bottom:4px">Specialist tracks</div>
-      <div style="font-family:var(--serif);font-size:20px;color:var(--text)">Your tracks</div>
+      <div class="t-label t-muted" style="margin-bottom:4px">Your tracks</div>
+      <div style="font-family:var(--serif);font-size:20px;color:var(--text)">Recovery &amp; specialist</div>
     </div>
     <div class="scroll-content" style="padding:14px;display:flex;flex-direction:column;gap:12px">
+
+      <div id="rec-card" style="background:#fff;border:1.5px solid var(--blue-border);border-radius:var(--r-lg);overflow:hidden;cursor:pointer">
+        <div style="background:var(--blue-light);padding:14px 16px;display:flex;align-items:center;gap:12px">
+          <div style="width:36px;height:36px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 3v12M5 7l4-4 4 4" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div style="flex:1">
+            <div style="font-size:15px;font-weight:500;color:var(--blue-dark)">90-Day Recovery</div>
+            <div style="font-size:11px;color:var(--blue);margin-top:2px">Daily readings, journaling &amp; reflection</div>
+          </div>
+          <div style="font-size:11px;font-weight:500;color:#fff;background:var(--blue);padding:3px 10px;border-radius:99px">${rDone===0?'Day 1':rDone===91?'Complete':'Day '+rCurrentDay}</div>
+        </div>
+        <div style="padding:12px 16px">
+          <div class="t-label t-muted" style="margin-bottom:6px">Progress · ${rDone} of 91 days</div>
+          <div class="rec-progress" style="margin-bottom:6px"><div class="rec-progress-fill" style="width:${rpct}%"></div></div>
+          <div style="font-size:12px;color:var(--dusk)">${getRecoveryWeek(Math.ceil(rCurrentDay/7)).phase} · ${getRecoveryWeek(Math.ceil(rCurrentDay/7)).title}</div>
+        </div>
+      </div>
+
       ${S.isChristian===true || enrolled ? `
-      <div id="faith-card" style="background:#fff;border:1.5px solid var(--amber-border);border-radius:var(--r-lg);overflow:hidden;cursor:pointer;transition:border-color 0.15s">
+      <div id="faith-card" style="background:#fff;border:1.5px solid var(--amber-border);border-radius:var(--r-lg);overflow:hidden;cursor:pointer">
         <div style="background:var(--amber-light);padding:14px 16px;display:flex;align-items:center;gap:12px">
           <div style="width:36px;height:36px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;flex-shrink:0">
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><line x1="9" y1="2" x2="9" y2="16" stroke="white" stroke-width="2" stroke-linecap="round"/><line x1="3" y1="7" x2="15" y2="7" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>
           </div>
           <div style="flex:1">
-            <div style="font-size:15px;font-weight:500;color:var(--amber-dark)">Faith & Divorce</div>
+            <div style="font-size:15px;font-weight:500;color:var(--amber-dark)">Faith &amp; Divorce</div>
             <div style="font-size:11px;color:var(--amber);margin-top:2px">For Christians going through divorce</div>
           </div>
-          ${enrolled ? `<div class="t-label" style="color:var(--amber-dark)">${done}/${total}</div>` : `<div style="font-size:11px;font-weight:500;color:var(--amber-dark);background:var(--amber);color:#fff;padding:3px 10px;border-radius:99px">Start</div>`}
+          ${enrolled ? `<div class="t-label" style="color:var(--amber-dark)">${done}/${total}</div>` : `<div style="font-size:11px;font-weight:500;background:var(--amber);color:#fff;padding:3px 10px;border-radius:99px">Start</div>`}
         </div>
         ${enrolled ? `
         <div style="padding:12px 16px">
           <div class="t-label t-muted" style="margin-bottom:6px">Your progress</div>
-          <div class="faith-progress" style="margin-bottom:6px"><div class="faith-progress-fill" style="width:${pct}%"></div></div>
-          <div style="font-size:12px;color:var(--dusk)">Module ${done+1 <= total ? done+1 : total} of ${total} · ${faithPhases.find(p=>p.modules.includes(Math.min(done+1,total)))?.title||'Rebuilding'}</div>
+          <div class="faith-progress" style="margin-bottom:6px"><div class="faith-progress-fill" style="width:${fpct}%"></div></div>
+          <div style="font-size:12px;color:var(--dusk)">Module ${done+1<=total?done+1:total} of ${total} · ${faithPhases.find(p=>p.modules.includes(Math.min(done+1,total)))?.title||'Rebuilding'}</div>
         </div>` : `
         <div style="padding:12px 16px">
-          <div style="font-size:13px;color:var(--dusk);line-height:1.6">12 modules across 4 phases. Theological questions, emotional support, and a faith-aware companion. Non-judgmental and denominationally neutral.</div>
+          <div style="font-size:13px;color:var(--dusk);line-height:1.6">12 modules across 4 phases. Theological questions, emotional support, and a faith-aware companion.</div>
         </div>`}
       </div>
       ` : `
       <div class="card" style="padding:16px">
         <div class="t-label t-muted" style="margin-bottom:8px">Specialist tracks</div>
-        <div style="font-size:13px;color:var(--dusk);line-height:1.6">Specialist tracks are available for specific situations. If you identify as Christian, there's a Faith & Divorce track built for you.</div>
+        <div style="font-size:13px;color:var(--dusk);line-height:1.6">If you identify as Christian, there's a Faith &amp; Divorce track built for you — 12 modules covering theology, grief, identity, and your faith community.</div>
         <button id="show-faith-btn" class="btn btn-ghost-light" style="margin-top:12px;font-size:13px">I'm a Christian — show me the track</button>
       </div>
       `}
-      <div class="card" style="padding:14px;opacity:0.5">
-        <div style="display:flex;align-items:center;gap:10px">
-          <div style="width:36px;height:36px;border-radius:50%;background:var(--linen);display:flex;align-items:center;justify-content:center;flex-shrink:0;border:0.5px solid var(--stone)">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="var(--dusk)" stroke-width="1"/><line x1="8" y1="5" x2="8" y2="9" stroke="var(--dusk)" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="11" r="0.75" fill="var(--dusk)"/></svg>
-          </div>
-          <div><div style="font-size:14px;font-weight:500;color:var(--dusk)">More tracks coming soon</div><div style="font-size:11px;color:var(--stone);margin-top:2px">Parenting after divorce · Financial recovery</div></div>
-        </div>
-      </div>
       <div style="height:8px"></div>
     </div>`;
+  on(w,'#rec-card','click',()=>{ S.screen='recoveryHome'; R(); });
   on(w,'#faith-card','click',()=>{
     if(enrolled){ S.screen='faithHome'; R(); }
     else { S.faith.obStep=1; S.screen='faithOb'; R(); }
@@ -2172,7 +2958,13 @@ async function saveAndConfirm(w, fields) {
 }
 function rNav() {
   const nav = el('div','bottom-nav');
-  const tabs=[['Home','home','M10 3L3 9v9h5v-5h4v5h5V9z'],['Companion','companion','M3 5a2 2 0 012-2h10a2 2 0 012 2v6a2 2 0 01-2 2H8l-4 3V5z'],['Journal','journal','M4 4a1 1 0 011-1h10a1 1 0 011 1v12l-4-2.5-4 2.5V4z'],['Tracks','tracks','M4 6h16M4 10h16M4 14h8'],['Profile','profile','M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z']];
+  const tabs=[
+    ['Home','home','M10 3L3 9v9h5v-5h4v5h5V9z'],
+    ['Companion','companion','M3 5a2 2 0 012-2h10a2 2 0 012 2v6a2 2 0 01-2 2H8l-4 3V5z'],
+    ['Journal','journal','M4 4a1 1 0 011-1h10a1 1 0 011 1v12l-4-2.5-4 2.5V4z'],
+    ['Tracks','tracks','M4 6h16M4 10h16M4 14h8'],
+    ['Profile','profile','M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z'],
+  ];
   nav.innerHTML=tabs.map(([l,sc,p])=>{
     const a=S.screen===sc;
     return `<div class="nav-tab ${a?'active':''}" data-sc="${sc}">
@@ -2182,15 +2974,320 @@ function rNav() {
   }).join('');
   nav.querySelectorAll('[data-sc]').forEach(e=>e.addEventListener('click',async()=>{
     const sc=e.dataset.sc; S.screen=sc;
-    if(sc==='companion'){S.convs=await loadConvs();if(!S.convs.length){const op=`Hi ${S.userName}. I'm glad you're here. How are you feeling right now?`;await saveMsg('assistant',op);S.convs=[{role:'assistant',content:op}];}}
-    if(sc==='journal')await loadJData();
-    if(sc==='home')await loadHomeData();
-    if(sc==='tracks'){}
+    if(sc==='home') await loadHomeData();
+    if(sc==='companion'){
+      if(!S.convs.length){ S.convs=await loadConvs(); }
+      if(!S.convs.length){
+        const seed = S.homeGreeting || `Hi ${S.userName}. I\'m glad you\'re here. How are you feeling right now?`;
+        await saveMsg('assistant',seed); S.convs=[{role:'assistant',content:seed}];
+      }
+    }
+    if(sc==='journal') await loadJData();
     if(sc==='faithJournal'){S.faith.jEntries=await loadFaithJournals();S.faith.jPhase='write';}
-    if(sc==='faithCompanion'){S.faith.jEntries=await loadFaithJournals();if(!S.faith.companionConvs.length){const op=`Welcome back. This is a space for the questions and the grief that doesn't always fit elsewhere. What's on your heart today?`;S.faith.companionConvs=[{role:'assistant',content:op}];}}
+    if(sc==='faithCompanion'){S.faith.jEntries=await loadFaithJournals();if(!S.faith.companionConvs.length){const op=`Welcome back. This is a space for the questions and the grief that doesn\'t always fit elsewhere. What\'s on your heart today?`;S.faith.companionConvs=[{role:'assistant',content:op}];}}
     R();
   }));
   return nav;
+}
+
+// ══════════════════════════════════════════════════════════════
+// ── 90-DAY RECOVERY TRACK SCREENS ─────────────────────────────
+// ══════════════════════════════════════════════════════════════
+
+function rRecoveryHome() {
+  const w = el('div','screen linen-bg');
+  const done = S.recovery.daysCompleted;
+  const total = 91;
+  const pct = Math.min(Math.round((done.length/total)*100),100);
+  const currentDay = Math.min(done.length+1, total);
+  const wk = getRecoveryWeek(Math.ceil(currentDay/7));
+
+  const phases = [
+    {label:'Survive', weeks:[1,2,3], color:'#6B8EAD'},
+    {label:'Stabilise', weeks:[4,5,6], color:'#5B85CC'},
+    {label:'Rebuild', weeks:[7,8,9,10], color:'#3D6CB5'},
+    {label:'Thrive', weeks:[11,12,13], color:'#2A4D8F'},
+  ];
+
+  const weekRows = RECOVERY_WEEKS.map(wkd => {
+    const wDays = RECOVERY_DAYS.filter(d => d.week === wkd.week);
+    const wDone = wDays.filter(d => done.includes(d.day)).length;
+    const isCurrentWk = wkd.week === Math.ceil(currentDay/7);
+    const isComplete = wDone === 7;
+    const isLocked = wkd.week > Math.ceil(currentDay/7);
+    return `<div class="rec-week-row ${isLocked?'rec-locked':''}" data-week="${wkd.week}" style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:#fff;border-radius:var(--r-md);border:0.5px solid ${isCurrentWk?'var(--blue-border)':'var(--stone)'};margin-bottom:6px;cursor:${isLocked?'default':'pointer'}">
+      <div style="width:28px;height:28px;border-radius:50%;background:${isComplete?'var(--blue)':'var(--blue-light)'};border:0.5px solid ${isComplete?'var(--blue)':'var(--blue-border)'};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        ${isComplete
+          ? '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+          : `<span style="font-size:10px;font-weight:500;color:var(--blue-dark)">${wkd.week}</span>`}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:10px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;color:var(--blue);margin-bottom:1px">${wkd.phase}</div>
+        <div style="font-size:13px;font-weight:500;color:${isLocked?'var(--stone)':'var(--text)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${wkd.title}</div>
+      </div>
+      <div style="font-size:11px;color:var(--dusk);flex-shrink:0">${wDone}/7</div>
+      ${isCurrentWk?'<div style="width:6px;height:6px;border-radius:50%;background:var(--blue);flex-shrink:0"></div>':''}
+    </div>`;
+  }).join('');
+
+  w.innerHTML=`
+    <div class="status-bar status-light"><span>9:41</span><span>●●●</span></div>
+    <div style="background:var(--blue);padding:10px 22px 20px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <div id="bk" style="color:rgba(255,255,255,0.6);font-size:20px;cursor:pointer;padding:2px 6px;line-height:1">‹</div>
+        <div style="flex:1">
+          <div style="font-size:10px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:rgba(255,255,255,0.55);margin-bottom:2px">Track</div>
+          <div style="font-size:16px;font-weight:500;color:#fff">90-Day Recovery</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div>
+          <div style="font-family:var(--serif);font-size:26px;color:#fff;line-height:1.2">${done.length===0?'Day one.':done.length===91?'Complete.':'Day '+currentDay+'.'}</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.65);margin-top:3px">${wk.phase} · ${wk.title}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:22px;font-weight:500;color:#fff">${pct}%</div>
+          <div style="font-size:10px;color:rgba(255,255,255,0.55);letter-spacing:0.08em">${done.length} of 91</div>
+        </div>
+      </div>
+      <div style="height:4px;background:rgba(255,255,255,0.2);border-radius:2px;overflow:hidden">
+        <div style="height:100%;border-radius:2px;background:#fff;width:${pct}%;transition:width 0.4s ease"></div>
+      </div>
+    </div>
+    ${currentDay<=91?`
+    <div style="padding:14px 14px 4px;display:flex;gap:8px">
+      <button id="open-today" class="btn" style="background:var(--blue);color:#fff;font-size:14px;flex:1">
+        ${done.includes(currentDay)?'Revisit day '+currentDay:'Open day '+currentDay+' →'}
+      </button>
+      <button id="open-companion" style="width:44px;height:44px;border-radius:12px;background:var(--blue-light);border:0.5px solid var(--blue-border);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 4a1.5 1.5 0 011.5-1.5h9A1.5 1.5 0 0115 4v6a1.5 1.5 0 01-1.5 1.5H7L3 14V4z" stroke="var(--blue)" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>`:''}
+    <div style="flex:1;overflow-y:auto;padding:8px 14px 16px">
+      <div class="t-label t-muted" style="margin-bottom:10px;padding-top:4px">All 13 weeks</div>
+      ${weekRows}
+    </div>`;
+
+  on(w,'#bk','click',()=>{ S.screen='tracks'; R(); });
+  on(w,'#open-companion','click',async()=>{
+    S.recovery.jEntries = await loadRecoveryJournals();
+    if(!S.recovery.companionConvs.length){
+      const dayNum = Math.min(S.recovery.daysCompleted.length+1,91);
+      const wk = getRecoveryWeek(Math.min(Math.ceil(dayNum/7),13));
+      const op = S.recovery.daysCompleted.length===0
+        ? `Hi ${S.userName}. I'm glad you're here on day one. This is a space where you can bring whatever you're carrying right now — no agenda. How are you feeling?`
+        : `Welcome back, ${S.userName}. You're ${S.recovery.daysCompleted.length} days in — ${wk.phase} phase, week ${Math.min(Math.ceil(dayNum/7),13)}. How's it actually going?`;
+      S.recovery.companionConvs=[{role:'assistant',content:op}];
+    }
+    S.screen='recoveryCompanion'; R();
+  });
+  on(w,'#open-today','click',()=>{
+    S.recovery.currentDayNum=currentDay;
+    S.recovery.jText=''; S.recovery.gratText='';
+    loadRecoveryJournals(currentDay).then(entries=>{ S.recovery.jEntries=entries; S.screen='recoveryDay'; R(); });
+  });
+  w.querySelectorAll('.rec-week-row:not(.rec-locked)').forEach(row=>{
+    row.addEventListener('click', e => {
+      if(e.target.closest('#open-today')) return;
+      const wkNum = parseInt(row.dataset.week);
+      const firstDayOfWeek = (wkNum-1)*7+1;
+      S.recovery.currentDayNum = firstDayOfWeek;
+      S.recovery.jText=''; S.recovery.gratText='';
+      loadRecoveryJournals(firstDayOfWeek).then(entries=>{ S.recovery.jEntries=entries; S.screen='recoveryDay'; R(); });
+    });
+  });
+  return w;
+}
+
+function rRecoveryDay() {
+  const w = el('div','screen linen-bg');
+  const dayNum = S.recovery.currentDayNum;
+  const day = getRecoveryDay(dayNum);
+  const wk = getRecoveryWeek(day.week);
+  const isDone = S.recovery.daysCompleted.includes(dayNum);
+  const existingJ = S.recovery.jEntries.find(e=>e.day_num===dayNum&&e.entry_type==='journal');
+  const existingG = S.recovery.jEntries.find(e=>e.day_num===dayNum&&e.entry_type==='gratitude');
+  const jVal = S.recovery.jText !== '' ? S.recovery.jText : (existingJ?.content||'');
+  const gVal = S.recovery.gratText !== '' ? S.recovery.gratText : (existingG?.content||'');
+
+  const milestoneMsg = day.milestone ? `
+    <div style="background:var(--blue);border-radius:var(--r-md);padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:10px">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="white" stroke-width="1.5"/><path d="M7 10l2 2 4-4" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div style="font-size:13px;color:#fff;font-weight:500">Day ${dayNum} milestone</div>
+    </div>` : '';
+
+  w.innerHTML=`
+    <div style="background:var(--blue);padding:10px 22px 16px;flex-shrink:0">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <div id="bk" style="color:rgba(255,255,255,0.6);font-size:20px;cursor:pointer;padding:2px 6px;line-height:1">‹</div>
+        <div style="flex:1">
+          <div style="font-size:10px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:rgba(255,255,255,0.55)">${wk.phase} · Week ${day.week}</div>
+          <div style="font-size:15px;font-weight:500;color:#fff">${wk.title}</div>
+        </div>
+        <div style="font-size:11px;font-weight:500;color:rgba(255,255,255,0.7);background:rgba(255,255,255,0.15);padding:3px 10px;border-radius:99px">Day ${dayNum}</div>
+      </div>
+    </div>
+    <div class="scroll-content" style="padding:16px 16px 32px;display:flex;flex-direction:column;gap:14px">
+      ${milestoneMsg}
+
+      <div>
+        <div style="font-family:var(--serif);font-size:17px;color:var(--text);line-height:1.75;margin-bottom:6px">${day.reading}</div>
+      </div>
+
+      <div style="height:0.5px;background:var(--stone)"></div>
+
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <div style="width:20px;height:20px;border-radius:50%;background:var(--blue-light);border:0.5px solid var(--blue-border);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5h6M5 2v6" stroke="var(--blue)" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </div>
+          <div class="t-label" style="color:var(--blue-dark)">Today's reflection</div>
+        </div>
+        <div style="background:var(--blue-light);border-left:3px solid var(--blue);border-radius:0 var(--r-md) var(--r-md) 0;padding:10px 14px;font-size:13px;color:var(--blue-dark);line-height:1.65">${day.reflection}</div>
+      </div>
+
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <div style="width:20px;height:20px;border-radius:50%;background:var(--blue-light);border:0.5px solid var(--blue-border);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x="1.5" y="1.5" width="7" height="7" rx="1" stroke="var(--blue)" stroke-width="1"/><line x1="3.5" y1="4" x2="6.5" y2="4" stroke="var(--blue)" stroke-width="1" stroke-linecap="round"/><line x1="3.5" y1="6" x2="5.5" y2="6" stroke="var(--blue)" stroke-width="1" stroke-linecap="round"/></svg>
+          </div>
+          <div class="t-label" style="color:var(--blue-dark)">Journal</div>
+        </div>
+        <div style="font-size:13px;color:var(--text);line-height:1.65;margin-bottom:8px;font-style:italic">${day.journal}</div>
+        <textarea id="j-text" class="j-textarea" style="border-color:var(--blue-border);min-height:120px" placeholder="Write here…">${jVal}</textarea>
+      </div>
+
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <div style="width:20px;height:20px;border-radius:50%;background:var(--blue-light);border:0.5px solid var(--blue-border);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M5 1.5l.9 2.7H9L6.6 5.8l.9 2.7L5 7 2.5 8.5l.9-2.7L1 4.2h3.1z" stroke="var(--blue)" stroke-width="1" stroke-linejoin="round"/></svg>
+          </div>
+          <div class="t-label" style="color:var(--blue-dark)">Gratitude</div>
+        </div>
+        <div style="font-size:13px;color:var(--text);line-height:1.65;margin-bottom:8px;font-style:italic">${day.gratitude}</div>
+        <textarea id="g-text" class="j-textarea" style="border-color:var(--blue-border);min-height:80px" placeholder="Write here…">${gVal}</textarea>
+      </div>
+
+      <div style="background:var(--linen);border-radius:var(--r-md);border:0.5px solid var(--blue-border);padding:12px 14px">
+        <div class="t-label" style="color:var(--blue-dark);margin-bottom:6px">Today's action</div>
+        <div style="font-size:13px;color:var(--text);line-height:1.65">${day.action}</div>
+      </div>
+
+      ${S.recovery.err?`<div class="err">${S.recovery.err}</div>`:''}
+      <button id="save-btn" class="btn" style="background:var(--blue);color:#fff" ${S.recovery.saving?'disabled':''}>
+        ${S.recovery.saving?'Saving…':isDone?'Update entries':'Mark day '+dayNum+' complete'}
+      </button>
+      ${dayNum < 91 ? `<button id="next-btn" class="btn btn-ghost-light" style="font-size:13px">Day ${dayNum+1} →</button>` : ''}
+    </div>`;
+
+  on(w,'#bk','click',()=>{ S.screen='recoveryHome'; R(); });
+
+  w.querySelector('#j-text')?.addEventListener('input', e=>{ S.recovery.jText=e.target.value; });
+  w.querySelector('#g-text')?.addEventListener('input', e=>{ S.recovery.gratText=e.target.value; });
+
+  on(w,'#save-btn','click',async()=>{
+    const jt=w.querySelector('#j-text')?.value.trim();
+    const gt=w.querySelector('#g-text')?.value.trim();
+    S.recovery.saving=true; S.recovery.err=''; R();
+    try{
+      if(jt) await saveRecoveryJournal(dayNum,'journal',jt);
+      if(gt) await saveRecoveryJournal(dayNum,'gratitude',gt);
+      if(!S.recovery.daysCompleted.includes(dayNum)){
+        S.recovery.daysCompleted.push(dayNum);
+        await saveRecoveryProgress({days_completed:S.recovery.daysCompleted});
+        await updateProfile({day_count: S.recovery.daysCompleted.length});
+        S.dayCount = S.recovery.daysCompleted.length;
+      }
+      S.recovery.jText=''; S.recovery.gratText='';
+      S.screen='recoveryHome';
+    }catch(e){ S.recovery.err='Could not save: '+e.message; }
+    S.recovery.saving=false; R();
+  });
+
+  on(w,'#next-btn','click',()=>{
+    S.recovery.currentDayNum=dayNum+1;
+    S.recovery.jText=''; S.recovery.gratText='';
+    loadRecoveryJournals(dayNum+1).then(entries=>{ S.recovery.jEntries=entries; R(); });
+  });
+
+  return w;
+}
+
+function rRecoveryCompanion() {
+  const w = el('div','screen linen-bg');
+  const dayNum = Math.min(S.recovery.daysCompleted.length+1,91);
+  const wk = getRecoveryWeek(Math.min(Math.ceil(dayNum/7),13));
+  const msgs = S.recovery.companionConvs.map(m=>
+    m.role==='assistant'
+      ? `<div class="bubble-row fade-in">
+          <div style="width:22px;height:22px;border-radius:50%;background:var(--blue-light);border:0.5px solid var(--blue-border);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <svg width="9" height="9" viewBox="0 0 9 9" fill="none"><circle cx="4.5" cy="4.5" r="3" stroke="var(--blue)" stroke-width="1.2"/></svg>
+          </div>
+          <div style="background:var(--blue-light);border-radius:14px 14px 14px 3px;padding:11px 14px;max-width:78%;font-family:var(--serif);font-size:13px;line-height:1.7;color:var(--blue-dark);font-style:italic">${m.content}</div>
+        </div>`
+      : `<div class="bubble-row fade-in" style="justify-content:flex-end">
+          <div class="bubble-u">${m.content}</div>
+        </div>`
+  ).join('');
+  const typ = S.recovery.companionTyping
+    ? `<div class="bubble-row fade-in">
+        <div style="width:22px;height:22px;border-radius:50%;background:var(--blue-light);border:0.5px solid var(--blue-border);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg width="9" height="9" viewBox="0 0 9 9" fill="none"><circle cx="4.5" cy="4.5" r="3" stroke="var(--blue)" stroke-width="1.2"/></svg>
+        </div>
+        <div class="typing-wrap" style="background:var(--blue-light)"><div class="td" style="background:var(--blue)"></div><div class="td" style="background:var(--blue)"></div><div class="td" style="background:var(--blue)"></div></div>
+      </div>` : '';
+
+  w.innerHTML=`
+    <div style="background:var(--blue);padding:10px 22px 14px;flex-shrink:0">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div id="bk" style="color:rgba(255,255,255,0.6);font-size:20px;cursor:pointer;padding:2px 6px;line-height:1">‹</div>
+        <div style="width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,0.15);border:0.5px solid rgba(255,255,255,0.3);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg width="9" height="9" viewBox="0 0 9 9" fill="none"><circle cx="4.5" cy="4.5" r="3" stroke="white" stroke-width="1.2"/></svg>
+        </div>
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:500;color:#fff">Recovery companion</div>
+          <div style="font-size:10px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.55)">${wk.phase} · Day ${dayNum}</div>
+        </div>
+      </div>
+    </div>
+    <div id="thread" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px">
+      <div class="t-label" style="text-align:center;color:var(--stone)">Today</div>
+      ${msgs}${typ}
+    </div>
+    <div style="padding:8px 12px 16px;border-top:0.5px solid var(--stone);background:#fff;flex-shrink:0">
+      <div style="display:flex;gap:8px;align-items:flex-end">
+        <textarea id="mi" class="input input-light" placeholder="Write back…" style="flex:1;border-radius:20px;resize:none;min-height:40px;padding:10px 14px;line-height:1.4;border-color:var(--blue-border)" rows="1"></textarea>
+        <button id="sb-btn" style="width:38px;height:38px;border-radius:50%;background:var(--blue);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8L14 2L8 14L7 9L2 8Z" fill="white"/></svg>
+        </button>
+      </div>
+    </div>`;
+
+  setTimeout(()=>{
+    const thread=w.querySelector('#thread'); thread.scrollTop=thread.scrollHeight;
+    on(w,'#bk','click',()=>{ S.screen='recoveryHome'; R(); });
+    const inp=w.querySelector('#mi');
+    const send=async()=>{
+      const t=inp.value.trim(); if(!t||S.recovery.companionTyping)return;
+      inp.value=''; inp.style.height='auto';
+      S.recovery.companionConvs.push({role:'user',content:t});
+      S.recovery.companionTyping=true; R();
+      try{
+        const reply=await ai(
+          S.recovery.companionConvs.map(m=>({role:m.role,content:m.content})),
+          SYS_RECOVERY_COMPANION()
+        );
+        S.recovery.companionConvs.push({role:'assistant',content:reply});
+      }catch(e){
+        S.recovery.companionConvs.push({role:'assistant',content:"I'm having trouble connecting right now ("+(e.message||'unknown error')+"). Please try again in a moment."});
+      }
+      S.recovery.companionTyping=false; R();
+    };
+    on(w,'#sb-btn','click',send);
+    inp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}});
+    inp.addEventListener('input',()=>{inp.style.height='auto';inp.style.height=Math.min(inp.scrollHeight,120)+'px';});
+  },0);
+  return w;
 }
 
 // ── Utils ──────────────────────────────────────────────────────
@@ -2208,28 +3305,33 @@ function opts(w,sel,selCls,circSel,circCls,setter,multi){
   }));
 }
 function cpPrompt(){const p=['How are you actually feeling today?','What\'s been sitting with you this week?','Tell me about one small thing that felt okay recently.','How are the children doing? And underneath that — how are you?','What does your day look like, and how are you feeling going into it?'];return p[Math.floor(Math.random()*p.length)];}
-function wkTheme(d){const t=['Week 1 · Grounding','Week 2 · Grief','Week 3 · Children','Week 4 · Identity','Week 5 · Routine','Week 6 · Social life','Week 7 · Finances','Week 8 · Self-worth','Week 9 · New chapter','Week 10 · Looking forward'];return t[Math.min(Math.floor((d-1)/7),t.length-1)];}
-function wkEx(d){const e=['What does safety feel like for you right now?','Letting yourself grieve what you lost.','How to talk to your children with honesty.','Who are you outside this marriage?','Building routines that belong to you.','The friendships worth keeping.','Your financial ground truth.','What you\'ve learned about yourself.','Imagining your next chapter.','The person you\'re becoming.'];return e[Math.min(Math.floor((d-1)/7),e.length-1)];}
+function wkTheme(d){const wkNum=Math.min(Math.ceil(d/7),13);const wk=getRecoveryWeek(wkNum);return 'Week '+wkNum+' \u00b7 '+wk.title;}
+function wkEx(d){const day=getRecoveryDay(d);return day?day.reflection:'Keep going.';}
 function milestone(d){if(d<7)return'First week complete';if(d<30)return'One month beside yourself';if(d<60)return'Two months of showing up';return'90-day track complete';}
-function mDays(d){if(d<7)return 7-d;if(d<30)return 30-d;if(d<60)return 60-d;return Math.max(90-d,0);}
+function mDays(d){if(d<7)return 7-d;if(d<30)return 30-d;if(d<60)return 60-d;return Math.max(91-d,0);}
 
 // ── Boot ───────────────────────────────────────────────────────
 async function boot() {
-  const u=LS.get('url'),k=LS.get('key'),a=LS.get('akey');
-  if(!u||!k||!a){S.screen='setup';R();return;}
-  S.sbUrl=u;S.sbKey=k;S.anKey=a;S.loading=true;R();
+  // Show splash on first ever visit, skip on subsequent
+  const splashSeen = LS.get('splashSeen');
+  if(!splashSeen){ S.screen='splash'; R(); return; }
+  await connectAndLoad();
+}
+
+async function connectAndLoad() {
+  S.loading=true; S.screen='auth'; R();
   try{
-    await initSB(u,k);
+    await initSB(SUPABASE_URL, SUPABASE_KEY);
     const {data:{session}}=await sb.auth.getSession();
     if(session) await handleSession(session); else S.screen='auth';
   }catch(e){
-    // Don't wipe credentials on error — show auth screen with a notice
     S.screen='auth';
-    S.err='Could not connect to Supabase: '+e.message+'. Check your credentials in settings.';
+    S.err='Could not connect. Please try again.';
   }
-  S.loading=false;R();
+  S.loading=false; R();
 }
 boot();
 </script>
 </body>
 </html>
+
