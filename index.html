@@ -368,6 +368,10 @@ async function deleteAllData() {
   await sb.from('beside_conversations').delete().eq('user_id', S.userId);
   await sb.from('beside_moods').delete().eq('user_id', S.userId);
   await sb.from('beside_journal').delete().eq('user_id', S.userId);
+  await sb.from('beside_faith_journal').delete().eq('user_id', S.userId);
+  await sb.from('beside_faith_progress').delete().eq('user_id', S.userId);
+  await sb.from('beside_recovery_journal').delete().eq('user_id', S.userId);
+  await sb.from('beside_recovery_progress').delete().eq('user_id', S.userId);
   await sb.from('beside_users').delete().eq('id', S.userId);
   // Delete the auth account via Edge Function (admin action)
   const r = await fetch(S.sbUrl + '/functions/v1/delete-account', {
@@ -378,6 +382,29 @@ async function deleteAllData() {
   // Sign out regardless of whether auth deletion succeeded
   await sb.auth.signOut();
   Object.assign(S, { userId:null, userName:'', userStage:'', userPriorities:[], convs:[], journalEntries:[], jPrompt:'', jText:'', todayMood:'', screen:'auth', authEmail:'', authPass:'', authName:'', err:'' });
+  render();
+}
+
+async function deleteDataOnly() {
+  // Wipe all content but keep the auth account — user can start fresh
+  await sb.from('beside_conversations').delete().eq('user_id', S.userId);
+  await sb.from('beside_moods').delete().eq('user_id', S.userId);
+  await sb.from('beside_journal').delete().eq('user_id', S.userId);
+  await sb.from('beside_faith_journal').delete().eq('user_id', S.userId);
+  await sb.from('beside_faith_progress').delete().eq('user_id', S.userId);
+  await sb.from('beside_recovery_journal').delete().eq('user_id', S.userId);
+  await sb.from('beside_recovery_progress').delete().eq('user_id', S.userId);
+  await sb.from('beside_users').update({
+    divorce_stage:null, priorities:[], streak:1, day_count:1
+  }).eq('id', S.userId);
+  // Reset local state but keep user signed in
+  Object.assign(S, {
+    userStage:'', userPriorities:[], convs:[], journalEntries:[], jPrompt:'', jText:'',
+    todayMood:'', dayCount:1, streak:1, homeGreeting:'', isChristian:null,
+    recovery:{ daysCompleted:[], jEntries:[], currentDayNum:1, jText:'', gratText:'', saving:false, err:'', companionConvs:[], companionTyping:false },
+    faith:{ enrolled:false, obStep:0, stage:'', denominations:[], concerns:[], journalConsent:false, hasChildren:null, modulesCompleted:[], currentModule:0, jEntries:[], jConvs:[], jIsTyping:false, jPhase:'write', jPromptId:'', jPromptText:'', jText:'', companionConvs:[], companionTyping:false, currentDeepDive:0, loading:false, err:'', settingsSaved:false },
+    screen:'onboarding', obStep:1
+  });
   render();
 }
 
@@ -1787,7 +1814,7 @@ function rHome() {
       </div>`
     : S.homeGreeting
       ? `<div style="font-family:var(--serif);font-size:18px;color:var(--linen);line-height:1.75;font-style:italic">${S.homeGreeting}</div>`
-      : `<div style="font-family:var(--serif);font-size:18px;color:var(--linen);line-height:1.75;font-style:italic">Good ${tod}, ${S.userName}. This space is just for you — whenever you\'re ready.</div>`;
+      : `<div style="font-family:var(--serif);font-size:18px;color:var(--linen);line-height:1.75;font-style:italic">Good ${tod}, ${S.userName}. Something brought you here today — what's sitting with you right now?</div>`;
 
   w.innerHTML=`
     <div style="background:var(--dark);padding:14px 18px 0;flex-shrink:0">
@@ -2130,11 +2157,21 @@ function rProfile() {
         <button id="signout-btn" class="btn btn-ghost-light" style="margin-bottom:8px">Sign out</button>
       </div>
 
-      <div style="background:#fff;border-radius:var(--r-lg);border:0.5px solid #f0c0c0;padding:16px">
-        <div class="t-label" style="color:#c0392b;margin-bottom:8px">Delete my account</div>
-        <div style="font-size:13px;color:var(--dusk);line-height:1.6;margin-bottom:14px">This permanently deletes everything — your profile, all conversations, journal entries, mood logs, and your account. This cannot be undone.</div>
-        ${S.err?`<div class="err" style="margin-bottom:10px">${S.err}</div>`:''}
-        <button id="delete-btn" class="btn" style="background:#fff;border:0.5px solid #e74c3c;color:#e74c3c;${S.loading?'opacity:0.5':''}" ${S.loading?'disabled':''}>${S.loading?'Deleting everything…':'Delete all my data and close my account'}</button>
+      <div style="background:#fff;border-radius:var(--r-lg);border:0.5px solid #f0c0c0;padding:16px;display:flex;flex-direction:column;gap:12px">
+        <div class="t-label" style="color:#c0392b;margin-bottom:0">Privacy &amp; data</div>
+
+        <div style="border-bottom:0.5px solid #f5e0e0;padding-bottom:12px">
+          <div style="font-size:13px;font-weight:500;color:var(--text);margin-bottom:4px">Delete all my data</div>
+          <div style="font-size:12px;color:var(--dusk);line-height:1.6;margin-bottom:10px">Permanently removes all your conversations, journal entries, mood logs, and track progress. Your account stays open — you can start fresh.</div>
+          <button id="delete-data-btn" class="btn" style="background:#fff;border:0.5px solid #e74c3c;color:#e74c3c" ${S.loading?'disabled':''}>Delete my data</button>
+        </div>
+
+        <div>
+          <div style="font-size:13px;font-weight:500;color:var(--text);margin-bottom:4px">Close my account</div>
+          <div style="font-size:12px;color:var(--dusk);line-height:1.6;margin-bottom:10px">Permanently deletes all your data and closes your account entirely. This cannot be undone.</div>
+          ${S.err?`<div class="err" style="margin-bottom:10px">${S.err}</div>`:''}
+          <button id="delete-btn" class="btn" style="background:#fff;border:0.5px solid #c0392b;color:#c0392b" ${S.loading?'disabled':''}>${S.loading?'Deleting…':'Delete data and close account'}</button>
+        </div>
       </div>
 
       <div style="height:8px"></div>
@@ -2142,10 +2179,17 @@ function rProfile() {
   on(w,'#bk','click',()=>{S.screen='home';R();});
   on(w,'#faith-settings-btn','click',()=>{ S.screen='faithSettings'; R(); });
   on(w,'#signout-btn','click',()=>signOut());
+  on(w,'#delete-data-btn','click',async()=>{
+    const confirmed = confirm('This will permanently delete all your conversations, journals, and track progress. Your account stays open.\n\nAre you sure?');
+    if(!confirmed) return;
+    S.loading=true; S.err=''; R();
+    try { await deleteDataOnly(); }
+    catch(e) { S.err='Could not delete data: '+e.message; S.loading=false; R(); }
+  });
   on(w,'#delete-btn','click',async()=>{
     const confirmed = confirm('This will permanently delete all your data and close your account. This cannot be undone.\n\nAre you absolutely sure?');
     if(!confirmed) return;
-    const doubleCheck = confirm('Last chance. Delete everything?');
+    const doubleCheck = confirm('Last chance. Delete everything and close account?');
     if(!doubleCheck) return;
     S.loading=true; S.err=''; R();
     try { await deleteAllData(); }
@@ -3334,4 +3378,3 @@ boot();
 </script>
 </body>
 </html>
-
